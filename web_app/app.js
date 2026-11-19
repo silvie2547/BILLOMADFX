@@ -6,6 +6,7 @@ const TOKEN_KEY = 'billomadfx.access_token';
 let currentUser = null;
 
 function showPage(pageId) {
+  if (pageId === 'admin' && currentUser?.role !== 'admin') return;
   $$('.page').forEach(page => page.classList.toggle('active', page.id === pageId));
   $$('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.page === pageId));
   $('#sidebar')?.classList.remove('open');
@@ -49,6 +50,8 @@ function showAuth() {
   if (!app) return;
   app.classList.add('authenticated-hidden');
   $('#authOverlay')?.classList.add('show');
+  const adminNav = $('.nav-item[data-page="admin"]');
+  if (adminNav) adminNav.hidden = true;
 }
 
 function showApp(user) {
@@ -56,9 +59,13 @@ function showApp(user) {
   $('.app-shell')?.classList.remove('authenticated-hidden');
   $('#authOverlay')?.classList.remove('show');
   const greeting = $('#greetingName');
-  if (greeting) greeting.textContent = user.display_name;
+  if (greeting) greeting.textContent = `Welcome, ${user.display_name}`;
   const profileName = $('#profileName');
   if (profileName) profileName.textContent = user.display_name;
+  const profileRole = $('#profileRole');
+  if (profileRole) profileRole.textContent = user.role === 'admin' ? 'Administrator' : 'User';
+  const adminNav = $('.nav-item[data-page="admin"]');
+  if (adminNav) adminNav.hidden = user.role !== 'admin';
   const initials = user.display_name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
   const avatar = $('.profile .avatar');
   if (avatar) avatar.textContent = initials;
@@ -66,19 +73,23 @@ function showApp(user) {
 
 async function loadAuthenticatedData() {
   try {
-    const [user, dashboard, risk, signal, mt5Status, mt5Account, mt5Positions, mt5Bars] = await Promise.all([
-      apiRequest('/api/v1/auth/me'),
+    const user = await apiRequest('/api/v1/auth/me');
+    const [dashboard, risk, signal, mt5Status, mt5Account, mt5Positions, mt5Bars, adminAudit] = await Promise.all([
       apiRequest('/api/v1/dashboard'),
       apiRequest('/api/v1/risk'),
       apiRequest('/api/v1/market/signal'),
       apiRequest('/api/v1/mt5/status').catch(() => null),
       apiRequest('/api/v1/mt5/account').catch(() => null),
       apiRequest('/api/v1/mt5/positions').catch(() => null),
-      apiRequest('/api/v1/mt5/bars?timeframe=H1&count=100').catch(() => null)
+      apiRequest('/api/v1/mt5/bars?timeframe=H1&count=100').catch(() => null),
+      user.role === 'admin'
+        ? apiRequest('/api/v1/admin/audit?limit=50').then(data => ({ data, error: null })).catch(error => ({ data: null, error }))
+        : Promise.resolve({ data: null, error: null })
     ]);
     showApp(user);
     applyDashboard(dashboard, risk, signal);
     applyMt5Status(mt5Status, mt5Account, mt5Positions, mt5Bars);
+    applyAdminAudit(user, adminAudit);
     return true;
   } catch (error) {
     toast('Dashboard unavailable', error.message, 'error');
@@ -148,6 +159,82 @@ function renderPositions(items, emptyMessage) {
   }
 }
 
+function renderCandles(bars) {
+  const chart = $('#mt5Candles');
+  const message = $('#marketChartMessage');
+  if (!chart || !message) return;
+  chart.replaceChildren();
+
+  const validBars = (bars || []).filter(bar =>
+    Number.isFinite(Number(bar.open)) &&
+    Number.isFinite(Number(bar.high)) &&
+    Number.isFinite(Number(bar.low)) &&
+    Number.isFinite(Number(bar.close)) &&
+    Number(bar.high) >= Number(bar.low)
+  ).slice(-60);
+  if (!validBars.length) {
+    chart.setAttribute('aria-label', 'No demo market data');
+    message.hidden = false;
+    return;
+  }
+
+  message.hidden = true;
+  const low = Math.min(...validBars.map(bar => Number(bar.low)));
+  const high = Math.max(...validBars.map(bar => Number(bar.high)));
+  const range = high - low || 1;
+  const y = price => ((high - price) / range) * 100;
+
+  for (const bar of validBars) {
+    const open = Number(bar.open);
+    const close = Number(bar.close);
+    const barHigh = Number(bar.high);
+    const barLow = Number(bar.low);
+    const candle = document.createElement('i');
+    candle.className = close >= open ? 'up' : 'down';
+    candle.style.setProperty('--wick-top', `${y(barHigh)}%`);
+    candle.style.setProperty('--wick-height', `${Math.max(0, y(barLow) - y(barHigh))}%`);
+    candle.style.setProperty('--body-top', `${y(Math.max(open, close))}%`);
+    candle.style.setProperty('--body-height', `${Math.abs(y(open) - y(close))}%`);
+    chart.append(candle);
+  }
+  chart.setAttribute('aria-label', `Last ${validBars.length} XAUUSD H1 demo candles`);
+}
+
+function applyAdminAudit(user, result) {
+  const message = $('#adminAuditMessage');
+  const container = $('#adminAuditLog');
+  if (!message || !container) return;
+  container.replaceChildren();
+  if (user.role !== 'admin') {
+    message.textContent = 'Administrator access is required.';
+    return;
+  }
+  if (result.error) {
+    message.textContent = `Could not load the audit log: ${result.error.message}`;
+    return;
+  }
+
+  const items = result.data?.items || [];
+  message.textContent = items.length ? `${items.length} most recent audit events` : 'No audit events recorded.';
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'audit-row';
+    const icon = document.createElement('span');
+    icon.textContent = '•';
+    const details = document.createElement('div');
+    const eventType = document.createElement('strong');
+    eventType.textContent = String(item.event_type || 'event').replaceAll('.', ' ');
+    const detail = document.createElement('p');
+    detail.textContent = item.detail || 'No additional details';
+    details.append(eventType, detail);
+    const time = document.createElement('time');
+    const createdAt = item.created_at ? new Date(item.created_at) : null;
+    time.textContent = createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toLocaleString() : 'Time unavailable';
+    row.append(icon, details, time);
+    container.append(row);
+  }
+}
+
 function applyMt5Status(status, account, mt5Positions, mt5Bars) {
   const connected = Boolean(status?.connected && status?.demo);
   const blockedRealAccount = Boolean(status?.connected && !status?.demo);
@@ -164,10 +251,17 @@ function applyMt5Status(status, account, mt5Positions, mt5Bars) {
   const latestBar = connected && mt5Bars?.items?.length ? mt5Bars.items[mt5Bars.items.length - 1] : null;
   const latestClose = Number(latestBar?.close);
   setText('#latestBarClose', Number.isFinite(latestClose) ? latestClose.toFixed(2) : 'Unavailable');
-  setText('#latestBarTime', latestBar?.time ? new Date(latestBar.time).toLocaleString() : 'No market data');
+  const latestDate = latestBar?.time ? new Date(latestBar.time) : null;
+  setText('#latestBarTime', latestDate && !Number.isNaN(latestDate.getTime()) ? latestDate.toLocaleString() : 'No market data');
+  renderCandles(connected ? mt5Bars?.items : []);
 
   const statusElement = $('#mt5ConnectionStatus');
-  if (statusElement) statusElement.classList.toggle('positive', connected);
+  if (statusElement) {
+    statusElement.classList.toggle('positive', connected);
+    statusElement.classList.toggle('unavailable', !connected);
+  }
+  const analysisStatus = $('#analysisStatus')?.closest('.status-pill');
+  if (analysisStatus) analysisStatus.classList.add('unavailable');
 
   if (connected && account?.balance != null) {
     setText('#accountBalance', `${account.currency || ''} ${Number(account.balance).toLocaleString()}`.trim());
@@ -186,7 +280,6 @@ function applyMt5Status(status, account, mt5Positions, mt5Bars) {
 
 async function handleLogin(event) {
   event.preventDefault();
-  const form = event.currentTarget;
   const submit = $('#loginSubmit');
   submit.disabled = true;
   try {
@@ -206,7 +299,6 @@ async function handleLogin(event) {
 }
 
 async function handleRegister(event) {
-  event.preventEvent?.();
   event.preventDefault();
   const submit = $('#registerSubmit');
   submit.disabled = true;
@@ -260,14 +352,12 @@ $('#refreshButton')?.addEventListener('click', async () => {
 });
 
 $('#notificationButton')?.addEventListener('click', () => toast('Notifications', 'No validated trading alerts are available.'));
-$('#disconnectButton')?.addEventListener('click', () => toast('Account connection', 'MT5 broker integration is not configured.'));
-
 $('#emergencyButton')?.addEventListener('click', async () => {
-  if (!window.confirm('Activate the emergency trading halt for this account?')) return;
+  if (!window.confirm('Record the emergency halt flag for this account? It cannot manage broker orders in this release.')) return;
   try {
     const response = await apiRequest('/api/v1/risk/emergency-stop', { method: 'POST', body: '{}' });
     setText('#riskHaltStatus', 'Emergency halt flag set');
-    toast('Emergency halt activated', response.message);
+    toast('Emergency halt flag recorded', response.message);
   } catch (error) {
     toast('Halt failed', error.message, 'error');
   }

@@ -25,8 +25,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description=(
-        "BILLOMADFX account and risk-control API. This release is demo/read-only: "
-        "it does not connect to a broker or submit, modify, or close orders."
+        "BILLOMADFX account and risk-control API. Optional MT5 access is read-only "
+        "and restricted to connected demo accounts; no order operations are exposed."
     ),
     version="0.1.0",
     lifespan=lifespan,
@@ -148,8 +148,8 @@ def emergency_stop(user: User = Depends(get_current_user), db: Session = Depends
     row.is_halted = True
     db.add(row)
     db.commit()
-    audit(db, user.id, "risk.emergency_stop", "New trading activity disabled; no broker orders exist in this release.")
-    return {"is_halted": True, "message": "Trading is halted. This API has no broker execution capability."}
+    audit(db, user.id, "risk.emergency_stop", "Emergency halt flag recorded; broker orders cannot be managed in this release.")
+    return {"is_halted": True, "message": "Emergency halt flag recorded. This API has no broker execution capability."}
 
 
 @app.get("/api/v1/admin/audit", tags=["administration"])

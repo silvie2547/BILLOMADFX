@@ -1,0 +1,68 @@
+.nav-item[hidden] {
+  display: none;
+}
+
+.signal-ring {
+  background: conic-gradient(var(--line) 0 100%);
+}
+
+.signal-ring strong {
+  color: var(--muted);
+}
+
+.signal-reason {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.status-pill.unavailable {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.candles {
+  align-items: stretch;
+  gap: 3px;
+  padding: 0 4px;
+}
+
+.candles i,
+.candles i:nth-child(n) {
+  position: relative;
+  flex: 1;
+  max-width: 9px;
+  height: 100%;
+  background: transparent;
+}
+
+.candles i::before,
+.candles i::after {
+  position: absolute;
+  content: "";
+  background: var(--candle-color);
+}
+
+.candles i::before {
+  top: var(--wick-top);
+  left: calc(50% - .5px);
+  width: 1px;
+  height: var(--wick-height);
+}
+
+.candles i::after {
+  top: var(--body-top);
+  left: 10%;
+  width: 80%;
+  height: max(var(--body-height), 1%);
+}
+
+.candles i.up {
+  --candle-color: var(--green);
+}
+
+.candles i.down {
+  --candle-color: var(--red);
+}

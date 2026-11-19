@@ -7,6 +7,7 @@
   <title>BILLOMADFX — Gold Trading Platform</title>
   <meta name="description" content="AI-powered automated XAUUSD trading platform.">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="live-data.css">
 </head>
 <body>
   <div class="app-shell">
@@ -22,12 +23,12 @@
         <button class="nav-item" data-page="analytics"><span class="nav-icon">◫</span><span>Analytics</span></button>
         <button class="nav-item" data-page="account"><span class="nav-icon">◉</span><span>MT5 Account</span></button>
         <button class="nav-item" data-page="risk"><span class="nav-icon">◇</span><span>Risk Controls</span></button>
-        <button class="nav-item" data-page="admin"><span class="nav-icon">⚙</span><span>Administration</span></button>
+        <button class="nav-item" data-page="admin" hidden><span class="nav-icon">⚙</span><span>Administration</span></button>
       </nav>
 
       <div class="sidebar-footer">
         <div class="demo-status"><i></i><span>Demo environment</span></div>
-        <button class="profile" id="profileButton"><div class="avatar">SO</div><div><strong>Silvie Om</strong><small>Investor</small></div><span>⋮</span></button>
+        <div class="profile"><div class="avatar">—</div><div><strong id="profileName">Account</strong><small id="profileRole">User</small></div></div>
       </div>
     </aside>
 
@@ -36,14 +37,14 @@
         <button class="mobile-menu" id="mobileMenu" aria-label="Toggle menu">☰</button>
         <div class="market-status"><span class="live-dot"></span><strong>XAUUSD</strong><span id="marketDataStatus">Market data unavailable</span></div>
         <div class="top-actions">
-          <button class="icon-button" id="notificationButton" aria-label="Notifications">♢<span class="badge">3</span></button>
+          <button class="icon-button" id="notificationButton" aria-label="Notifications">♢</button>
           <button class="icon-button" id="themeButton" aria-label="Toggle theme">☼</button>
         </div>
       </header>
 
       <section class="page active" id="overview">
         <div class="page-heading">
-          <div><p class="eyebrow">DASHBOARD</p><h1>Good morning, Silvie</h1><p>Here is your trading performance today.</p></div>
+          <div><p class="eyebrow">DASHBOARD</p><h1 id="greetingName">Welcome</h1><p>Account data is shown only when provided by a verified integration.</p></div>
           <div class="heading-actions"><span class="last-update">Updated just now</span><button class="secondary-button" id="refreshButton">↻ Refresh</button></div>
         </div>
 
@@ -64,6 +65,7 @@
           <article class="panel ai-panel">
             <div class="panel-header"><div><h2>AI Market Analysis</h2><p>XAUUSD · H1</p></div><span class="status-pill"><i></i><span id="analysisStatus">Unavailable</span></span></div>
             <div class="signal-ring"><div><small>AI SIGNAL</small><strong id="aiSignal">NO TRADE</strong><span id="aiConfidence">Awaiting validated model</span></div></div>
+            <p id="aiReason" class="signal-reason">No trusted market data or validated strategy is configured.</p>
             <div class="signal-details"><div><span>Trend</span><strong>Unavailable</strong></div><div><span>Volatility</span><strong>Unavailable</strong></div><div><span>Entry zone</span><strong>Not calculated</strong></div></div>
             <button class="gold-button" id="executeButton" disabled>Live execution locked</button>
             <small class="safety-note">Demo validation required before execution</small>
@@ -83,15 +85,15 @@
         </div>
       </section>
 
-      <section class="page" id="trading"><div class="page-heading"><div><p class="eyebrow">READ-ONLY</p><h1>Trading</h1><p>Market data is displayed for connected demo accounts only.</p></div><span class="status-pill"><i></i> Orders disabled</span></div><div class="empty-layout"><article class="panel"><h2>XAUUSD · H1</h2><div class="workspace-placeholder"><div class="ticker"><strong>Latest bar close</strong><span id="latestBarClose">Unavailable</span><small id="latestBarTime">No market data</small></div><div class="candles"></div></div></article><article class="panel"><h2>Order controls</h2><p class="safe-message">This release is read-only and has no order submission endpoint.</p></article></div></section>
+      <section class="page" id="trading"><div class="page-heading"><div><p class="eyebrow">READ-ONLY</p><h1>Trading</h1><p>Market data is displayed for connected demo accounts only.</p></div><span class="status-pill unavailable"><i></i> Orders disabled</span></div><div class="empty-layout"><article class="panel"><h2>XAUUSD · H1</h2><div class="workspace-placeholder"><div class="ticker"><strong>Latest bar close</strong><span id="latestBarClose">Unavailable</span><small id="latestBarTime">No market data</small></div><div class="candles" id="mt5Candles" role="img" aria-label="No demo market data"></div><p id="marketChartMessage">No demo market data available.</p></div></article><article class="panel"><h2>Order controls</h2><p class="safe-message">This release is read-only and has no order submission endpoint.</p></article></div></section>
 
       <section class="page" id="analytics"><div class="page-heading"><div><p class="eyebrow">PERFORMANCE</p><h1>Analytics</h1><p>Validated performance is calculated from completed trades.</p></div></div><div class="metrics-grid"><article class="metric-card"><div class="metric-top"><span>Net profit</span></div><strong>No data</strong></article><article class="metric-card"><div class="metric-top"><span>Profit factor</span></div><strong>No data</strong></article><article class="metric-card"><div class="metric-top"><span>Max drawdown</span></div><strong>No data</strong></article><article class="metric-card"><div class="metric-top"><span>Trades</span></div><strong>No data</strong></article></div><article class="panel analytics-placeholder"><h2>Monthly performance</h2><p>Performance history will appear after a verified trade-history integration is available.</p></article></section>
 
-      <section class="page" id="account"><div class="page-heading"><div><p class="eyebrow">CONNECTION</p><h1>MT5 Account</h1><p>Manage your MetaTrader 5 demo connection.</p></div></div><article class="panel account-card"><div class="account-header"><div class="account-logo">MT5</div><div><h2 id="mt5AccountTitle">MT5 demo account</h2><p id="mt5AccountLogin">Not connected</p></div><span class="status-pill" id="mt5ConnectionStatus"><i></i> Not connected</span></div><div class="account-grid"><div><span>Server</span><strong id="mt5Server">Unavailable</strong></div><div><span>Balance</span><strong id="mt5Balance">No data</strong></div><div><span>Account mode</span><strong id="mt5Mode">Unavailable</strong></div><div><span>Algo trading</span><strong id="mt5Algo">Unavailable</strong></div></div><button class="secondary-button" id="disconnectButton">Disconnect account</button></article></section>
+      <section class="page" id="account"><div class="page-heading"><div><p class="eyebrow">CONNECTION</p><h1>MT5 Account</h1><p>Read-only status for the local MetaTrader 5 demo terminal.</p></div></div><article class="panel account-card"><div class="account-header"><div class="account-logo">MT5</div><div><h2 id="mt5AccountTitle">MT5 demo account</h2><p id="mt5AccountLogin">Not connected</p></div><span class="status-pill" id="mt5ConnectionStatus"><i></i> Not connected</span></div><div class="account-grid"><div><span>Server</span><strong id="mt5Server">Unavailable</strong></div><div><span>Balance</span><strong id="mt5Balance">No data</strong></div><div><span>Account mode</span><strong id="mt5Mode">Unavailable</strong></div><div><span>Terminal trade permission</span><strong id="mt5Algo">Unavailable</strong></div></div></article></section>
 
       <section class="page" id="risk"><div class="page-heading"><div><p class="eyebrow">PROTECTION</p><h1>Risk Controls</h1><p>Configured limits are informational; execution is not implemented.</p></div><span class="status-pill"><i></i><span id="riskHaltStatus">Halt flag not set</span></span></div><div class="risk-grid"><article class="panel"><h2>Configured limits</h2><div class="risk-row"><span>Daily loss limit</span><strong id="dailyLossLimit">—</strong></div><div class="risk-row"><span>Weekly loss limit</span><strong id="weeklyLossLimit">—</strong></div><div class="risk-row"><span>Maximum drawdown</span><strong id="maxDrawdownLimit">—</strong></div><div class="risk-row"><span>Maximum spread</span><strong id="maxSpreadLimit">—</strong></div></article><article class="panel"><h2>Execution safeguards</h2><p>Order execution and enforcement are not available in this read-only release.</p></article></div><button class="danger-button" id="emergencyButton">Record emergency halt</button></section>
 
-      <section class="page" id="admin"><div class="page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h1>System Control</h1><p>Administrative data is available only to authorized administrators.</p></div></div><article class="panel"><p>Sign in with an administrator account to view audit events. No system-wide user statistics are configured yet.</p><div id="adminAuditLog"></div></article></section>
+      <section class="page" id="admin"><div class="page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h1>System Control</h1><p>Recent account and safety events.</p></div></div><article class="panel"><h2>Audit log</h2><p id="adminAuditMessage">Administrator access is required.</p><div id="adminAuditLog"></div></article></section>
     </main>
   </div>
 
