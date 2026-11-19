@@ -1,31 +1,41 @@
 # BILLOMADFX Web Frontend
 
-A responsive, dependency-free frontend demo for the BILLOMADFX gold trading platform.
+A responsive, dependency-free frontend for BILLOMADFX.
 
-## Features
+## Run with the backend
 
-- Overview dashboard
-- XAUUSD trading workspace
-- AI signal panel
-- MT5 account connection status
-- Performance analytics
-- Risk controls
-- Administration view
-- Dark and light themes
-- Mobile navigation
-- Demo-safe order controls
+Start the API:
 
-## Run locally
+```bash
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+copy .env.example .env
+uvicorn app.main:app --reload
+```
 
-Open `index.html` directly in a browser, or serve the directory:
+Serve the frontend from a separate terminal:
 
 ```bash
 cd web_app
 python -m http.server 8080
 ```
 
-Then visit `http://localhost:8080`.
+Open `http://localhost:8080`. The default API URL is `http://127.0.0.1:8000`.
 
-## Safety
+To use another API URL, set it before `app.js` loads:
 
-The frontend is currently a visual prototype backed by demonstration data. It does not connect to a broker or submit orders. Live execution controls remain disabled until backend authentication, risk validation, MT5 demo verification, testing, and explicit operator approval are implemented.
+```html
+<script>window.BILLOMADFX_API_URL = 'https://api.example.com';</script>
+<script src="app.js"></script>
+```
+
+## Integration behavior
+
+- Sign-in and registration use FastAPI bearer authentication.
+- JWT tokens are stored in browser `localStorage`.
+- Dashboard, position, market-signal, and risk views load from protected API endpoints.
+- No account balance or trade is fabricated; unavailable values are shown explicitly.
+- Emergency stop calls `/api/v1/risk/emergency-stop` and requires confirmation.
+- Broker connection and order controls remain unavailable.
