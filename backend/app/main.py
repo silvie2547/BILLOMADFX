@@ -13,6 +13,7 @@ from .dependencies import get_current_user, require_admin
 from .models import AuditEvent, RiskSettings, User
 from .schemas import HaltResponse, LoginRequest, RegisterRequest, RiskResponse, TokenResponse
 from .security import create_access_token, hash_password, verify_password
+from .mt5_routes import router as mt5_router
 
 
 @asynccontextmanager
@@ -37,6 +38,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+app.include_router(mt5_router)
 
 
 def audit(db: Session, user_id: int | None, event_type: str, detail: str = "") -> None:

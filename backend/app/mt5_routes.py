@@ -46,7 +46,7 @@ def mt5_positions(service: Mt5ReadService = Depends(mt5_service), user=Depends(g
 
 @router.get("/bars")
 def mt5_bars(
-    timeframe: str = Query("H1", pattern="^[Mm][15]|M1|M5|M15|M30|H1|H4|D1$"),
+    timeframe: str = Query("H1", pattern="^(M1|M5|M15|M30|H1|H4|D1)$"),
     count: int = Query(100, ge=1, le=500),
     service: Mt5ReadService = Depends(mt5_service),
     user=Depends(get_current_user),

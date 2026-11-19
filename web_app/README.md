@@ -35,7 +35,8 @@ To use another API URL, set it before `app.js` loads:
 
 - Sign-in and registration use FastAPI bearer authentication.
 - JWT tokens are stored in browser `localStorage`.
-- Dashboard, position, market-signal, and risk views load from protected API endpoints.
-- No account balance or trade is fabricated; unavailable values are shown explicitly.
-- Emergency stop calls `/api/v1/risk/emergency-stop` and requires confirmation.
-- Broker connection and order controls remain unavailable.
+- Dashboard risk settings and market-signal state load from protected API endpoints.
+- MT5 account, positions, and H1 bars are read only from a connected demo account; all other account modes are blocked.
+- No account balance, position, signal, or performance statistic is fabricated; unavailable values are shown explicitly.
+- Emergency halt records a per-account flag; it does not stop or manage broker orders in this release.
+- There are no order submission, modification, or close controls/endpoints.

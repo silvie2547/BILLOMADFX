@@ -66,18 +66,23 @@ function showApp(user) {
 
 async function loadAuthenticatedData() {
   try {
-    const [user, dashboard, risk, positions, signal] = await Promise.all([
+    const [user, dashboard, risk, signal, mt5Status, mt5Account, mt5Positions, mt5Bars] = await Promise.all([
       apiRequest('/api/v1/auth/me'),
       apiRequest('/api/v1/dashboard'),
       apiRequest('/api/v1/risk'),
-      apiRequest('/api/v1/trading/positions'),
-      apiRequest('/api/v1/market/signal')
+      apiRequest('/api/v1/market/signal'),
+      apiRequest('/api/v1/mt5/status').catch(() => null),
+      apiRequest('/api/v1/mt5/account').catch(() => null),
+      apiRequest('/api/v1/mt5/positions').catch(() => null),
+      apiRequest('/api/v1/mt5/bars?timeframe=H1&count=100').catch(() => null)
     ]);
     showApp(user);
-    applyDashboard(dashboard, risk, positions, signal);
+    applyDashboard(dashboard, risk, signal);
+    applyMt5Status(mt5Status, mt5Account, mt5Positions, mt5Bars);
+    return true;
   } catch (error) {
-    localStorage.removeItem(TOKEN_KEY);
-    showAuth();
+    toast('Dashboard unavailable', error.message, 'error');
+    return false;
   }
 }
 
@@ -86,22 +91,96 @@ function setText(selector, value) {
   if (element) element.textContent = value;
 }
 
-function applyDashboard(dashboard, risk, positions, signal) {
+function applyDashboard(dashboard, risk, signal) {
   setText('#accountBalance', dashboard.account.balance == null ? 'Not connected' : `$${Number(dashboard.account.balance).toLocaleString()}`);
   setText('#todayProfit', dashboard.trading.today_profit == null ? 'No data' : `$${Number(dashboard.trading.today_profit).toLocaleString()}`);
-  setText('#openPositions', String(positions.count));
   setText('#aiSignal', signal.action);
   setText('#aiConfidence', signal.confidence == null ? 'Awaiting validated model' : `${signal.confidence}% confidence`);
   setText('#aiReason', signal.reason);
-  setText('#riskHaltStatus', risk.is_halted ? 'Trading halted' : 'Capital protection active');
+  setText('#riskHaltStatus', risk.is_halted ? 'Emergency halt flag set' : 'Halt flag not set');
+  setText('#dailyLossLimit', `${risk.daily_loss_limit_pct}%`);
+  setText('#weeklyLossLimit', `${risk.weekly_loss_limit_pct}%`);
+  setText('#maxDrawdownLimit', `${risk.max_drawdown_pct}%`);
+  setText('#maxSpreadLimit', `${risk.max_spread_points} points`);
+}
 
+function renderPositions(items, emptyMessage) {
   const tableBody = $('#positionsTableBody');
-  if (tableBody) {
-    tableBody.innerHTML = positions.items.length ? positions.items.map(position => `
-      <tr><td><span class="symbol-icon">AU</span><strong>${position.symbol}</strong></td>
-      <td>${position.type || '—'}</td><td>${position.volume || '—'}</td><td>${position.entry || '—'}</td>
-      <td>${position.current || '—'}</td><td>${position.profit || '—'}</td></tr>`).join('') :
-      '<tr><td colspan="6" class="empty-table">No open positions · Broker data unavailable</td></tr>';
+  if (!tableBody) return;
+  tableBody.replaceChildren();
+
+  if (!items.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 6;
+    cell.className = 'empty-table';
+    cell.textContent = emptyMessage;
+    row.append(cell);
+    tableBody.append(row);
+    return;
+  }
+
+  for (const position of items) {
+    const row = document.createElement('tr');
+    const values = [
+      position.symbol,
+      position.type,
+      position.volume,
+      position.entry,
+      position.current,
+      position.profit
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement('td');
+      if (index === 0) {
+        const icon = document.createElement('span');
+        icon.className = 'symbol-icon';
+        icon.textContent = 'AU';
+        const symbol = document.createElement('strong');
+        symbol.textContent = value ?? '—';
+        cell.append(icon, symbol);
+      } else {
+        cell.textContent = value ?? '—';
+      }
+      row.append(cell);
+    });
+    tableBody.append(row);
+  }
+}
+
+function applyMt5Status(status, account, mt5Positions, mt5Bars) {
+  const connected = Boolean(status?.connected && status?.demo);
+  const blockedRealAccount = Boolean(status?.connected && !status?.demo);
+  const statusText = connected ? 'Connected' : blockedRealAccount ? 'Non-demo account blocked' : status?.error || 'Not connected';
+  setText('#mt5AccountTitle', connected ? 'MT5 Demo Account' : 'MT5 demo account');
+  setText('#mt5AccountLogin', connected ? `Account •••• ${status.login_last4 || '—'}` : 'Not connected');
+  setText('#mt5Server', connected ? account?.server || status?.server || 'Unavailable' : 'Unavailable');
+  setText('#mt5Balance', !connected || account?.balance == null ? 'No data' : `${account.currency || ''} ${Number(account.balance).toLocaleString()}`.trim());
+  setText('#mt5Mode', connected ? 'DEMO' : blockedRealAccount ? 'Blocked' : status?.account_mode || 'Unavailable');
+  setText('#mt5Algo', connected ? (status.trade_allowed && !status.tradeapi_disabled ? 'Enabled' : 'Disabled') : 'Unavailable');
+  setText('#mt5ConnectionStatus', statusText);
+  setText('#marketDataStatus', connected && mt5Bars?.items?.length ? 'Demo market data connected' : 'Market data unavailable');
+  setText('#analysisStatus', 'No validated strategy');
+  const latestBar = connected && mt5Bars?.items?.length ? mt5Bars.items[mt5Bars.items.length - 1] : null;
+  const latestClose = Number(latestBar?.close);
+  setText('#latestBarClose', Number.isFinite(latestClose) ? latestClose.toFixed(2) : 'Unavailable');
+  setText('#latestBarTime', latestBar?.time ? new Date(latestBar.time).toLocaleString() : 'No market data');
+
+  const statusElement = $('#mt5ConnectionStatus');
+  if (statusElement) statusElement.classList.toggle('positive', connected);
+
+  if (connected && account?.balance != null) {
+    setText('#accountBalance', `${account.currency || ''} ${Number(account.balance).toLocaleString()}`.trim());
+  }
+
+  if (connected && mt5Positions?.items) {
+    setText('#openPositions', String(mt5Positions.count));
+    setText('#positionExposure', mt5Positions.count ? `${mt5Positions.count} demo position${mt5Positions.count === 1 ? '' : 's'}` : 'No broker exposure');
+    renderPositions(mt5Positions.items, 'No open demo positions');
+  } else {
+    setText('#openPositions', '—');
+    setText('#positionExposure', blockedRealAccount ? 'Non-demo account blocked' : 'Broker data unavailable');
+    renderPositions([], blockedRealAccount ? 'Positions blocked for non-demo accounts' : 'Broker data unavailable');
   }
 }
 
@@ -117,8 +196,8 @@ async function handleLogin(event) {
     });
     localStorage.setItem(TOKEN_KEY, data.access_token);
     showApp(data.user);
-    await loadAuthenticatedData();
-    toast('Welcome back', `Signed in as ${data.user.display_name}`);
+    const refreshed = await loadAuthenticatedData();
+    if (refreshed) toast('Welcome back', `Signed in as ${data.user.display_name}`);
   } catch (error) {
     toast('Sign-in failed', error.message, 'error');
   } finally {
@@ -142,8 +221,8 @@ async function handleRegister(event) {
     });
     localStorage.setItem(TOKEN_KEY, data.access_token);
     showApp(data.user);
-    await loadAuthenticatedData();
-    toast('Account created', `Welcome, ${data.user.display_name}`);
+    const refreshed = await loadAuthenticatedData();
+    if (refreshed) toast('Account created', `Welcome, ${data.user.display_name}`);
   } catch (error) {
     toast('Registration failed', error.message, 'error');
   } finally {
@@ -174,11 +253,9 @@ $('#themeButton')?.addEventListener('click', () => {
 });
 
 $('#refreshButton')?.addEventListener('click', async () => {
-  try {
-    await loadAuthenticatedData();
+  const refreshed = await loadAuthenticatedData();
+  if (refreshed) {
     toast('Dashboard refreshed', 'API data is up to date.');
-  } catch (error) {
-    toast('Refresh failed', error.message, 'error');
   }
 });
 
@@ -189,7 +266,7 @@ $('#emergencyButton')?.addEventListener('click', async () => {
   if (!window.confirm('Activate the emergency trading halt for this account?')) return;
   try {
     const response = await apiRequest('/api/v1/risk/emergency-stop', { method: 'POST', body: '{}' });
-    setText('#riskHaltStatus', 'Trading halted');
+    setText('#riskHaltStatus', 'Emergency halt flag set');
     toast('Emergency halt activated', response.message);
   } catch (error) {
     toast('Halt failed', error.message, 'error');
@@ -227,6 +304,6 @@ function drawChart(period='1M') {
 window.addEventListener('resize', () => drawChart(currentPeriod));
 window.addEventListener('load', () => {
   drawChart('1M');
-  if (localStorage.getItem(TOKEN_KEY)) loadAuthenticatedData();
+  if (localStorage.getItem(TOKEN_KEY)) void loadAuthenticatedData();
   else showAuth();
 });
