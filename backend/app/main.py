@@ -11,7 +11,7 @@ from .config import settings
 from .database import Base, engine, get_db
 from .dependencies import get_current_user, require_admin
 from .models import AuditEvent, RiskSettings, User
-from .schemas import HaltResponse, LoginRequest, RegisterRequest, RiskResponse, TokenResponse
+from .schemas import HaltResponse, LoginRequest, RegisterRequest, RiskResponse, RiskUpdateRequest, TokenResponse
 from .security import create_access_token, hash_password, verify_password
 from .mt5_routes import router as mt5_router
 
@@ -35,7 +35,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(mt5_router)
@@ -139,6 +139,27 @@ def positions(user: User = Depends(get_current_user)):
 @app.get("/api/v1/risk", response_model=RiskResponse, tags=["risk"])
 def get_risk(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = risk_for(db, user)
+    return row
+
+
+@app.put("/api/v1/risk", response_model=RiskResponse, tags=["risk"])
+def update_risk(payload: RiskUpdateRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = risk_for(db, user)
+    row.daily_loss_limit_pct = payload.daily_loss_limit_pct
+    row.weekly_loss_limit_pct = payload.weekly_loss_limit_pct
+    row.max_drawdown_pct = payload.max_drawdown_pct
+    row.max_spread_points = payload.max_spread_points
+    db.add(row)
+    db.add(AuditEvent(
+        user_id=user.id,
+        event_type="risk.settings_updated",
+        detail=(
+            f"daily={row.daily_loss_limit_pct}%; weekly={row.weekly_loss_limit_pct}%; "
+            f"drawdown={row.max_drawdown_pct}%; spread={row.max_spread_points} points"
+        ),
+    ))
+    db.commit()
+    db.refresh(row)
     return row
 
 

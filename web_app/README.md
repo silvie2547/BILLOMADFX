@@ -38,6 +38,7 @@ To use another API URL, set it before `app.js` loads:
 - Dashboard risk settings and market-signal state load from protected API endpoints.
 - MT5 account, positions, and H1 bars are read only from a connected demo account; all other account modes are blocked.
 - The trading view plots the returned H1 OHLC bars; the administrator view loads the protected audit log only for administrator accounts.
+- Risk limits can be edited per account and are validated by the API; project maxima and the loss-limit ordering are enforced on save.
 - No account balance, position, signal, or performance statistic is fabricated; unavailable values are shown explicitly.
 - Emergency halt records a per-account flag; it does not stop or manage broker orders in this release.
 - There are no order submission, modification, or close controls/endpoints.

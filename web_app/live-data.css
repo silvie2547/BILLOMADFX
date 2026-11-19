@@ -23,6 +23,38 @@
   color: var(--muted);
 }
 
+.risk-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.risk-form label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.risk-form input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.risk-form button {
+  margin-top: 8px;
+}
+
+.risk-form p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .candles {
   align-items: stretch;
   gap: 3px;

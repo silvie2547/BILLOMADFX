@@ -1,5 +1,6 @@
 import re
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Self
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -46,11 +47,28 @@ class TokenResponse(BaseModel):
 
 
 class RiskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     daily_loss_limit_pct: float
     weekly_loss_limit_pct: float
     max_drawdown_pct: float
     max_spread_points: int
     is_halted: bool
+
+
+class RiskUpdateRequest(BaseModel):
+    daily_loss_limit_pct: float = Field(ge=0.1, le=2.0)
+    weekly_loss_limit_pct: float = Field(ge=0.1, le=5.0)
+    max_drawdown_pct: float = Field(ge=0.1, le=10.0)
+    max_spread_points: int = Field(ge=1, le=40)
+
+    @model_validator(mode="after")
+    def validate_loss_limit_order(self) -> Self:
+        if self.daily_loss_limit_pct > self.weekly_loss_limit_pct:
+            raise ValueError("Daily loss limit cannot exceed the weekly loss limit")
+        if self.weekly_loss_limit_pct > self.max_drawdown_pct:
+            raise ValueError("Weekly loss limit cannot exceed the maximum drawdown limit")
+        return self
 
 
 class HaltResponse(BaseModel):

@@ -108,11 +108,25 @@ function applyDashboard(dashboard, risk, signal) {
   setText('#aiSignal', signal.action);
   setText('#aiConfidence', signal.confidence == null ? 'Awaiting validated model' : `${signal.confidence}% confidence`);
   setText('#aiReason', signal.reason);
+  applyRiskSettings(risk);
+}
+
+function applyRiskSettings(risk) {
   setText('#riskHaltStatus', risk.is_halted ? 'Emergency halt flag set' : 'Halt flag not set');
   setText('#dailyLossLimit', `${risk.daily_loss_limit_pct}%`);
   setText('#weeklyLossLimit', `${risk.weekly_loss_limit_pct}%`);
   setText('#maxDrawdownLimit', `${risk.max_drawdown_pct}%`);
   setText('#maxSpreadLimit', `${risk.max_spread_points} points`);
+  const values = {
+    '#dailyLossInput': risk.daily_loss_limit_pct,
+    '#weeklyLossInput': risk.weekly_loss_limit_pct,
+    '#maxDrawdownInput': risk.max_drawdown_pct,
+    '#maxSpreadInput': risk.max_spread_points
+  };
+  for (const [selector, value] of Object.entries(values)) {
+    const input = $(selector);
+    if (input) input.value = value;
+  }
 }
 
 function renderPositions(items, emptyMessage) {
@@ -324,6 +338,31 @@ async function handleRegister(event) {
 
 $('#loginForm')?.addEventListener('submit', handleLogin);
 $('#registerForm')?.addEventListener('submit', handleRegister);
+
+$('#riskSettingsForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = $('#saveRiskSettings');
+  submit.disabled = true;
+  try {
+    const data = await apiRequest('/api/v1/risk', {
+      method: 'PUT',
+      body: JSON.stringify({
+        daily_loss_limit_pct: Number($('#dailyLossInput').value),
+        weekly_loss_limit_pct: Number($('#weeklyLossInput').value),
+        max_drawdown_pct: Number($('#maxDrawdownInput').value),
+        max_spread_points: Number($('#maxSpreadInput').value)
+      })
+    });
+    applyRiskSettings(data);
+    setText('#riskSettingsStatus', 'Saved. These limits are not enforced against orders in this release.');
+    toast('Risk limits saved', 'Settings are stored for this account; order execution remains disabled.');
+  } catch (error) {
+    setText('#riskSettingsStatus', error.message);
+    toast('Risk settings not saved', error.message, 'error');
+  } finally {
+    submit.disabled = false;
+  }
+});
 
 $$('[data-auth-tab]').forEach(button => button.addEventListener('click', () => {
   $$('[data-auth-tab]').forEach(item => item.classList.toggle('active', item === button));

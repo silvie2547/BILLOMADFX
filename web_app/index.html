@@ -91,7 +91,28 @@
 
       <section class="page" id="account"><div class="page-heading"><div><p class="eyebrow">CONNECTION</p><h1>MT5 Account</h1><p>Read-only status for the local MetaTrader 5 demo terminal.</p></div></div><article class="panel account-card"><div class="account-header"><div class="account-logo">MT5</div><div><h2 id="mt5AccountTitle">MT5 demo account</h2><p id="mt5AccountLogin">Not connected</p></div><span class="status-pill" id="mt5ConnectionStatus"><i></i> Not connected</span></div><div class="account-grid"><div><span>Server</span><strong id="mt5Server">Unavailable</strong></div><div><span>Balance</span><strong id="mt5Balance">No data</strong></div><div><span>Account mode</span><strong id="mt5Mode">Unavailable</strong></div><div><span>Terminal trade permission</span><strong id="mt5Algo">Unavailable</strong></div></div></article></section>
 
-      <section class="page" id="risk"><div class="page-heading"><div><p class="eyebrow">PROTECTION</p><h1>Risk Controls</h1><p>Configured limits are informational; execution is not implemented.</p></div><span class="status-pill"><i></i><span id="riskHaltStatus">Halt flag not set</span></span></div><div class="risk-grid"><article class="panel"><h2>Configured limits</h2><div class="risk-row"><span>Daily loss limit</span><strong id="dailyLossLimit">—</strong></div><div class="risk-row"><span>Weekly loss limit</span><strong id="weeklyLossLimit">—</strong></div><div class="risk-row"><span>Maximum drawdown</span><strong id="maxDrawdownLimit">—</strong></div><div class="risk-row"><span>Maximum spread</span><strong id="maxSpreadLimit">—</strong></div></article><article class="panel"><h2>Execution safeguards</h2><p>Order execution and enforcement are not available in this read-only release.</p></article></div><button class="danger-button" id="emergencyButton">Record emergency halt</button></section>
+      <section class="page" id="risk">
+        <div class="page-heading"><div><p class="eyebrow">PROTECTION</p><h1>Risk Controls</h1><p>Limits are bounded by conservative project maxima.</p></div><span class="status-pill unavailable"><i></i><span id="riskHaltStatus">Halt flag not set</span></span></div>
+        <div class="risk-grid">
+          <article class="panel">
+            <h2>Account risk limits</h2>
+            <form id="riskSettingsForm" class="risk-form">
+              <label for="dailyLossInput">Daily loss limit (%)</label>
+              <input id="dailyLossInput" name="daily_loss_limit_pct" type="number" min="0.1" max="2" step="0.1" required>
+              <label for="weeklyLossInput">Weekly loss limit (%)</label>
+              <input id="weeklyLossInput" name="weekly_loss_limit_pct" type="number" min="0.1" max="5" step="0.1" required>
+              <label for="maxDrawdownInput">Maximum drawdown (%)</label>
+              <input id="maxDrawdownInput" name="max_drawdown_pct" type="number" min="0.1" max="10" step="0.1" required>
+              <label for="maxSpreadInput">Maximum spread (points)</label>
+              <input id="maxSpreadInput" name="max_spread_points" type="number" min="1" max="40" step="1" required>
+              <button class="secondary-button" id="saveRiskSettings" type="submit">Save risk limits</button>
+              <p id="riskSettingsStatus" role="status">Risk limits are not enforced against orders in this release.</p>
+            </form>
+          </article>
+          <article class="panel"><h2>Execution safeguards</h2><p>Order execution and enforcement are not available in this read-only release.</p></article>
+        </div>
+        <button class="danger-button" id="emergencyButton">Record emergency halt</button>
+      </section>
 
       <section class="page" id="admin"><div class="page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h1>System Control</h1><p>Recent account and safety events.</p></div></div><article class="panel"><h2>Audit log</h2><p id="adminAuditMessage">Administrator access is required.</p><div id="adminAuditLog"></div></article></section>
     </main>
