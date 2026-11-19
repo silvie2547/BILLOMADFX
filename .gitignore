@@ -1,0 +1,51 @@
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# IDE and editor settings
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Model and dataset files
+ai_models/saved_models/
+data/private/
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+
+# Temporary files and backups
+*.tmp
+*.bak
+*.old
+
+# Build outputs
+build/
+dist/
