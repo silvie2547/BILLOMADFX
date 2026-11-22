@@ -49,3 +49,10 @@ data/private/
 # Build outputs
 build/
 dist/
+
+# Node and Android build artifacts
+node_modules/
+.gradle/
+local.properties
+*.apk
+!android/**/*.apk

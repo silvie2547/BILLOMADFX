@@ -553,6 +553,54 @@ The goal is not simply to create a bot that places trades.
 
 The goal is to build a dependable, secure and carefully tested trading platform.
 
+## 21. Releases, Versioning and Installation
+
+The repository ships a real, installable app on every push to `main` via the `Release` GitHub Action:
+
+- **Versioning:** releases start at **v0.0.1** and the patch number increases by **+0.0.1** on every push (`v0.0.2`, `v0.0.3`, ...). The version is stamped into the Android app (`versionName`/`versionCode`), the release tag, and the API (`GET /api/v1/meta`).
+- **Artifacts per release:** `BILLOMADFX-vX.Y.Z.apk` (signed Android app) and `BILLOMADFX-PWA-vX.Y.Z.zip` (installable web app for self-hosting).
+
+### Install on Android
+
+1. Download the APK from the GitHub Releases page.
+2. Open it; allow *Install unknown apps* for the browser if prompted.
+3. New releases install directly over the old one (stable signing key).
+
+### Install on Windows / macOS / Linux / iOS
+
+The web app is a full PWA. Deploy the backend (below), open its URL and install:
+
+- Chrome/Edge (desktop and Android): in-app **Install app** button or address-bar install icon.
+- iOS Safari: *Share → Add to Home Screen*.
+
+### Android app and the API
+
+The APK bundles this web frontend and calls the deployed backend for accounts and market data. Set the repository variable `APP_API_URL` (Settings → Secrets and variables → Actions → Variables) to the backend's public URL before pushing, and it is baked into the built app.
+
+## 22. Deploying the API (real users)
+
+Anyone can create an account once the backend is reachable over HTTPS:
+
+- **Render (easiest):** New + → Blueprint → select this repository. `render.yaml` provisions the web service and a PostgreSQL database (`APP_SECRET_KEY` is generated automatically).
+- **Docker (self-host):**
+  ```bash
+  docker compose up --build -d    # app on http://localhost:8000
+  ```
+- **Local:** `cd backend && pip install -r requirements.txt && uvicorn app.main:app`
+
+The backend serves the web app and the API from one origin; browsers, PWAs and the Android app all talk to the same URL. Users, passwords (Argon2id), risk limits and audit events are stored persistently (SQLite locally/PostgreSQL in production).
+
+## 23. Live Market Data
+
+Prices and candles are real and fetched from free public providers, with no API keys:
+
+- Spot gold (XAU/USD): `gold-api.com`.
+- Candlesticks and the EMA/RSI trend engine: Binance public REST, `PAXG/USDT` (a gold-backed token, 1 token = 1 troy ounce), on M15/H1/H4/D1.
+- If a provider is unreachable the app reports the failure instead of showing invented numbers.
+- Optional read-only MetaTrader 5 integration remains available for users with a connected desktop terminal.
+
+The app does not submit, modify, or close broker orders, and no component does.
+
 **BILLOMADFX — TRADE • ANALYSE • GROW**
 
 ---

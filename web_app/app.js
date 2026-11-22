@@ -1,9 +1,12 @@
 const $ = (selector, scope=document) => scope.querySelector(selector);
 const $$ = (selector, scope=document) => [...scope.querySelectorAll(selector)];
 
-const API_BASE = window.BILLOMADFX_API_URL || 'http://127.0.0.1:8000';
+// config.js sets window.BILLOMADFX_API_URL ('' means the API serves this UI
+// from the same origin; a full URL is used when they are hosted apart).
+const API_BASE = typeof window.BILLOMADFX_API_URL === 'string' ? window.BILLOMADFX_API_URL : '';
 const TOKEN_KEY = 'billomadfx.access_token';
 let currentUser = null;
+let deferredInstallPrompt = null;
 
 function showPage(pageId) {
   if (pageId === 'admin' && currentUser?.role !== 'admin') return;
@@ -75,20 +78,22 @@ async function loadAuthenticatedData() {
   try {
     const user = await apiRequest('/api/v1/auth/me');
     showApp(user);
-    const [dashboard, risk, signal, mt5Status, mt5Account, mt5Positions, mt5Bars, adminAudit] = await Promise.all([
+    const [dashboard, risk, mt5Status, mt5Account, mt5Positions, mt5Bars, marketCandles, adminAudit] = await Promise.all([
       apiRequest('/api/v1/dashboard'),
       apiRequest('/api/v1/risk'),
-      apiRequest('/api/v1/market/signal'),
       apiRequest('/api/v1/mt5/status').catch(() => null),
       apiRequest('/api/v1/mt5/account').catch(() => null),
       apiRequest('/api/v1/mt5/positions').catch(() => null),
-      apiRequest('/api/v1/mt5/bars?timeframe=H1&count=100').catch(() => null),
+      apiRequest('/api/v1/mt5/status').then(status => status?.connected && status?.demo
+        ? apiRequest('/api/v1/mt5/bars?timeframe=H1&count=100').catch(() => null)
+        : null).catch(() => null),
+      apiRequest('/api/v1/market/candles?timeframe=H1&count=100').catch(() => null),
       user.role === 'admin'
         ? apiRequest('/api/v1/admin/audit?limit=50').then(data => ({ data, error: null })).catch(error => ({ data: null, error }))
         : Promise.resolve({ data: null, error: null })
     ]);
-    applyDashboard(dashboard, risk, signal);
-    applyMt5Status(mt5Status, mt5Account, mt5Positions, mt5Bars);
+    applyDashboard(dashboard, risk);
+    applyMt5Status(mt5Status, mt5Account, mt5Positions, mt5Bars, marketCandles, dashboard.market || null);
     applyAdminAudit(user, adminAudit);
     return true;
   } catch (error) {
@@ -102,12 +107,52 @@ function setText(selector, value) {
   if (element) element.textContent = value;
 }
 
-function applyDashboard(dashboard, risk, signal) {
-  setText('#accountBalance', dashboard.account.balance == null ? 'Not connected' : `$${Number(dashboard.account.balance).toLocaleString()}`);
-  setText('#todayProfit', dashboard.trading.today_profit == null ? 'No data' : `$${Number(dashboard.trading.today_profit).toLocaleString()}`);
-  setText('#aiSignal', signal.action);
-  setText('#aiConfidence', signal.confidence == null ? 'Awaiting validated model' : `${signal.confidence}% confidence`);
-  setText('#aiReason', signal.reason);
+function applyDashboard(dashboard, risk) {
+  const quote = dashboard.market?.quote || {};
+  const trend = dashboard.market?.trend || {};
+
+  if (quote.available && quote.price != null) {
+    const price = `$${Number(quote.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    setText('#spotPrice', price);
+    setText('#spotQuote', price);
+    setText('#spotSource', `Live · ${quote.source} · ${new Date(quote.updated_at).toLocaleTimeString()}`);
+    setText('#marketDataStatus', 'Spot gold live');
+    $('#marketDataStatus')?.closest('.market-status')?.classList.add('live');
+  } else {
+    setText('#spotPrice', '—');
+    setText('#spotQuote', 'Unavailable');
+    setText('#spotSource', quote.error || 'Live data unavailable');
+    setText('#marketDataStatus', 'Live data unavailable');
+  }
+
+  const trendElement = $('#aiSignal');
+  if (trend.available) {
+    setText('#aiSignal', trend.trend);
+    trendElement?.classList.remove('bearish', 'bullish', 'neutral');
+    trendElement?.classList.add(String(trend.trend || 'neutral').toLowerCase());
+    setText('#aiConfidence', `EMA/RSI · ${trend.timeframe || 'H1'}`);
+    setText('#aiReason', trend.reason);
+    setText('#ema20Value', trend.ema20 != null ? Number(trend.ema20).toFixed(2) : '—');
+    setText('#ema50Value', trend.ema50 != null ? Number(trend.ema50).toFixed(2) : '—');
+    setText('#rsi14Value', trend.rsi14 != null ? Number(trend.rsi14).toFixed(1) : '—');
+    setText('#analysisStatus', trend.trend);
+    const pill = $('#analysisStatus')?.closest('.status-pill');
+    if (pill) {
+      pill.classList.remove('unavailable');
+      pill.classList.toggle('positive', trend.trend === 'BULLISH');
+    }
+  } else {
+    setText('#aiSignal', '—');
+    setText('#aiConfidence', 'Live indicators');
+    setText('#aiReason', trend.reason || 'Live market data is unavailable right now.');
+    setText('#ema20Value', '—');
+    setText('#ema50Value', '—');
+    setText('#rsi14Value', '—');
+    setText('#analysisStatus', 'Unavailable');
+    $('#analysisStatus')?.closest('.status-pill')?.classList.add('unavailable');
+  }
+
+  setText('#accountBalance', dashboard.account.balance == null ? 'Not connected' : `${dashboard.account.currency || ''} ${Number(dashboard.account.balance).toLocaleString()}`.trim());
   applyRiskSettings(risk);
 }
 
@@ -187,7 +232,7 @@ function renderCandles(bars) {
     Number(bar.high) >= Number(bar.low)
   ).slice(-60);
   if (!validBars.length) {
-    chart.setAttribute('aria-label', 'No demo market data');
+    chart.setAttribute('aria-label', 'No market data');
     message.hidden = false;
     return;
   }
@@ -211,7 +256,7 @@ function renderCandles(bars) {
     candle.style.setProperty('--body-height', `${Math.abs(y(open) - y(close))}%`);
     chart.append(candle);
   }
-  chart.setAttribute('aria-label', `Last ${validBars.length} XAUUSD H1 demo candles`);
+  chart.setAttribute('aria-label', `Last ${validBars.length} gold H1 candles`);
 }
 
 function applyAdminAudit(user, result) {
@@ -249,33 +294,41 @@ function applyAdminAudit(user, result) {
   }
 }
 
-function applyMt5Status(status, account, mt5Positions, mt5Bars) {
+function applyMt5Status(status, account, mt5Positions, mt5Bars, marketCandles, market) {
   const connected = Boolean(status?.connected && status?.demo);
   const blockedRealAccount = Boolean(status?.connected && !status?.demo);
   const statusText = connected ? 'Connected' : blockedRealAccount ? 'Non-demo account blocked' : status?.error || 'Not connected';
-  setText('#mt5AccountTitle', connected ? 'MT5 Demo Account' : 'MT5 demo account');
+  setText('#mt5AccountTitle', connected ? 'MT5 Demo Account' : 'MT5 terminal');
   setText('#mt5AccountLogin', connected ? `Account •••• ${status.login_last4 || '—'}` : 'Not connected');
   setText('#mt5Server', connected ? account?.server || status?.server || 'Unavailable' : 'Unavailable');
   setText('#mt5Balance', !connected || account?.balance == null ? 'No data' : `${account.currency || ''} ${Number(account.balance).toLocaleString()}`.trim());
   setText('#mt5Mode', connected ? 'DEMO' : blockedRealAccount ? 'Blocked' : status?.account_mode || 'Unavailable');
   setText('#mt5Algo', connected ? (status.trade_allowed && !status.tradeapi_disabled ? 'Enabled' : 'Disabled') : 'Unavailable');
   setText('#mt5ConnectionStatus', statusText);
-  setText('#marketDataStatus', connected && mt5Bars?.items?.length ? 'Demo market data connected' : 'Market data unavailable');
-  setText('#analysisStatus', 'No validated strategy');
-  const latestBar = connected && mt5Bars?.items?.length ? mt5Bars.items[mt5Bars.items.length - 1] : null;
+  setText('#analysisStatus', market?.trend?.available ? market.trend.trend : 'Unavailable');
+
+  // Candle source preference: the user's own MT5 terminal, else live Binance data.
+  const candleSource = connected && mt5Bars?.items?.length ? 'mt5' : marketCandles?.available && marketCandles?.items?.length ? 'market' : 'none';
+  const items = candleSource === 'mt5' ? mt5Bars.items : candleSource === 'market' ? marketCandles.items : [];
+  setText('#marketDataStatus', candleSource === 'mt5' ? 'MT5 demo data connected' : candleSource === 'market' ? 'Live market data' : 'Live data unavailable');
+
+  const latestBar = items.length ? items[items.length - 1] : null;
   const latestClose = Number(latestBar?.close);
   setText('#latestBarClose', Number.isFinite(latestClose) ? latestClose.toFixed(2) : 'Unavailable');
   const latestDate = latestBar?.time ? new Date(latestBar.time) : null;
   setText('#latestBarTime', latestDate && !Number.isNaN(latestDate.getTime()) ? latestDate.toLocaleString() : 'No market data');
-  renderCandles(connected ? mt5Bars?.items : []);
+  renderCandles(items);
+  $('#marketChartMessage').textContent = candleSource === 'market'
+    ? 'Live candles: PAXG/USDT (tokenized gold) from Binance.'
+    : candleSource === 'mt5'
+      ? 'Live candles from your connected MT5 terminal.'
+      : (marketCandles?.error || 'Live market data is unavailable right now.');
 
   const statusElement = $('#mt5ConnectionStatus');
   if (statusElement) {
     statusElement.classList.toggle('positive', connected);
     statusElement.classList.toggle('unavailable', !connected);
   }
-  const analysisStatus = $('#analysisStatus')?.closest('.status-pill');
-  if (analysisStatus) analysisStatus.classList.add('unavailable');
 
   if (connected && account?.balance != null) {
     setText('#accountBalance', `${account.currency || ''} ${Number(account.balance).toLocaleString()}`.trim());
@@ -287,8 +340,8 @@ function applyMt5Status(status, account, mt5Positions, mt5Bars) {
     renderPositions(mt5Positions.items, 'No open demo positions');
   } else {
     setText('#openPositions', '—');
-    setText('#positionExposure', blockedRealAccount ? 'Non-demo account blocked' : 'Broker data unavailable');
-    renderPositions([], blockedRealAccount ? 'Positions blocked for non-demo accounts' : 'Broker data unavailable');
+    setText('#positionExposure', blockedRealAccount ? 'Non-demo account blocked' : 'Connect an MT5 terminal for positions');
+    renderPositions([], blockedRealAccount ? 'Positions blocked for non-demo accounts' : 'Connect an MT5 terminal for positions');
   }
 }
 
@@ -431,8 +484,41 @@ function drawChart(period='1M') {
 }
 
 window.addEventListener('resize', () => drawChart(currentPeriod));
+
+// Install prompt (Chromium: Android/desktop). On iOS, users install via
+// Share -> "Add to Home Screen" (see README).
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  const installButton = $('#installButton');
+  if (installButton) installButton.hidden = false;
+});
+
+$('#installButton')?.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  if (choice.outcome === 'accepted') toast('Installed', 'BILLOMADFX was added to this device.');
+  deferredInstallPrompt = null;
+  $('#installButton').hidden = true;
+});
+
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+async function loadAppVersion() {
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/meta`);
+    if (!response.ok) return;
+    const meta = await response.json();
+    setText('#appVersion', `BILLOMADFX v${meta.version}`);
+  } catch (_) { /* offline shell still works */ }
+}
+
 window.addEventListener('load', () => {
   drawChart('1M');
+  void loadAppVersion();
   if (localStorage.getItem(TOKEN_KEY)) void loadAuthenticatedData();
   else showAuth();
 });

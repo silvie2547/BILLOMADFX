@@ -1,0 +1,14 @@
+{
+  "name": "billomadfx",
+  "version": "0.0.1",
+  "private": true,
+  "description": "BILLOMADFX — installable gold trading platform (PWA + Android)",
+  "scripts": {
+    "cap:sync": "cap sync android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  }
+}

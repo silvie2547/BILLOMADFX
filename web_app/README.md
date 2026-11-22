@@ -1,44 +1,49 @@
-# BILLOMADFX Web Frontend
+# BILLOMADFX Web App (PWA)
 
-A responsive, dependency-free frontend for BILLOMADFX.
+A dependency-free, installable frontend for BILLOMADFX. Works as a Progressive
+Web App on Android, Windows, macOS, Linux and iOS, and is bundled into the
+Android app by Capacitor.
 
-## Run with the backend
+## Run (single origin — recommended)
 
-Start the API:
+The FastAPI backend serves this folder directly, so there is no CORS setup:
 
 ```bash
 cd backend
 python -m venv .venv
-# Windows: .venv\Scripts\Activate.ps1
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
 python -m pip install -r requirements.txt
-copy .env.example .env
-uvicorn app.main:app --reload
+copy .env.example .env   # Windows; use cp on macOS/Linux
+uvicorn app.main:app
 ```
 
-Serve the frontend from a separate terminal:
+Open `http://127.0.0.1:8000` — the app and the API share one origin.
+
+## Frontend-only development (optional)
 
 ```bash
-cd web_app
-python -m http.server 8080
+cd web_app && python -m http.server 8080
 ```
 
-Open `http://localhost:8080`. The default API URL is `http://127.0.0.1:8000`.
+Set the API URL in `web_app/config.js` (`window.BILLOMADFX_API_URL = 'http://127.0.0.1:8000'`).
 
-To use another API URL, set it before `app.js` loads:
+## Install on a device
 
-```html
-<script>window.BILLOMADFX_API_URL = 'https://api.example.com';</script>
-<script src="app.js"></script>
-```
+- **Android (Chrome):** open the deployed URL → tap **Install app** in the
+  sidebar (or Chrome menu → *Add to Home screen*). Or install the signed APK
+  from the GitHub Releases page.
+- **Windows / macOS / Linux (Chrome, Edge):** address-bar install icon →
+  *Install BILLOMADFX*.
+- **iOS (Safari):** Share → *Add to Home Screen*.
 
 ## Integration behavior
 
-- Sign-in and registration use FastAPI bearer authentication.
-- JWT tokens are stored in browser `localStorage`.
-- Dashboard risk settings and market-signal state load from protected API endpoints.
-- MT5 account, positions, and H1 bars are read only from a connected demo account; all other account modes are blocked.
-- The trading view plots the returned H1 OHLC bars; the administrator view loads the protected audit log only for administrator accounts.
-- Risk limits can be edited per account and are validated by the API; project maxima and the loss-limit ordering are enforced on save.
-- No account balance, position, signal, or performance statistic is fabricated; unavailable values are shown explicitly.
-- Emergency halt records a per-account flag; it does not stop or manage broker orders in this release.
-- There are no order submission, modification, or close controls/endpoints.
+- Real user accounts: Argon2-hashed passwords, JWT bearer sessions (no demo mode).
+- Live market data: spot gold from gold-api.com; H1/H4/D1 candles and the
+  EMA/RSI trend engine from Binance public REST (PAXG/USDT tokenized gold).
+  Nothing is fabricated; if a provider is down the UI says so.
+- Optional read-only MT5 integration: when the local MT5 desktop terminal is
+  connected to a demo account, its data takes precedence over Binance data.
+- Risk limits are bounded by project maxima and validated on save.
+- No order submission, modification, or close controls/endpoints exist.

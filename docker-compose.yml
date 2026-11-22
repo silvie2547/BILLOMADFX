@@ -1,0 +1,12 @@
+services:
+  billomadfx:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Generate your own: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      APP_SECRET_KEY: change-me-to-a-random-secret
+      DATABASE_URL: sqlite:////app/data/billomadfx.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

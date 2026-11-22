@@ -1,0 +1,23 @@
+services:
+  # Deploy the full app (API + installable PWA) on Render:
+  # push this repo, then in Render "New +" -> "Blueprint" -> pick the repository.
+  - type: web
+    name: billomadfx
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: STATIC_DIR
+        value: /app/web_app
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: billomadfx
+          property: connectionString
+
+databases:
+  - name: billomadfx
+    plan: basic-256mb

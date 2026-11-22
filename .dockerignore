@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+android
+tests
+scripts
+docs
+mt5_demo_permissions
+data
+.venv
+venv
+__pycache__
+*.md

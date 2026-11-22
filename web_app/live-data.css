@@ -8,6 +8,40 @@
   padding: 0;
 }
 
+.sidebar-footer .install-button {
+  margin: 0 9px 4px;
+}
+
+.version-note {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  margin: 0 9px 12px;
+}
+
+.signal-ring strong.bullish {
+  color: var(--green);
+}
+
+.signal-ring strong.bearish {
+  color: var(--red);
+}
+
+.signal-ring strong.neutral,
+.signal-ring strong[data-trend="NEUTRAL"] {
+  color: var(--gold);
+}
+
+.market-status.live .live-dot {
+  animation: live-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .signal-ring {
   background: conic-gradient(var(--line) 0 100%);
 }

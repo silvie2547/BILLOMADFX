@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "BILLOMADFX — Gold Trading Platform",
+  "short_name": "BILLOMADFX",
+  "description": "Live gold (XAU) market analysis, account and risk controls. Installable on Android, Windows, macOS, Linux and iOS.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#080a0f",
+  "theme_color": "#080a0f",
+  "categories": ["finance", "business"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 from datetime import timezone
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -10,10 +12,14 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import Base, engine, get_db
 from .dependencies import get_current_user, require_admin
+from .market import MarketDataService, SUPPORTED_TIMEFRAMES
 from .models import AuditEvent, RiskSettings, User
 from .schemas import HaltResponse, LoginRequest, RegisterRequest, RiskResponse, RiskUpdateRequest, TokenResponse
 from .security import create_access_token, hash_password, verify_password
 from .mt5_routes import router as mt5_router
+
+APP_VERSION = settings.app_version
+market_service = MarketDataService()
 
 
 @asynccontextmanager
@@ -25,10 +31,11 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description=(
-        "BILLOMADFX account and risk-control API. Optional MT5 access is read-only "
+        "BILLOMADFX account, live gold market data and risk-control API. Market "
+        "prices come from free public providers. Optional MT5 access is read-only "
         "and restricted to connected demo accounts; no order operations are exposed."
     ),
-    version="0.1.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -71,7 +78,19 @@ def user_payload(user: User) -> dict:
 
 @app.get("/health", tags=["system"])
 def health():
-    return {"status": "ok", "environment": settings.environment, "trading_enabled": False}
+    return {"status": "ok", "environment": settings.environment, "version": APP_VERSION, "trading_enabled": False}
+
+
+@app.get("/api/v1/meta", tags=["system"])
+def meta():
+    """Public metadata so any client (PWA, Android APK) can identify the API."""
+    return {
+        "name": settings.app_name,
+        "version": APP_VERSION,
+        "market_sources": ["gold-api.com (spot XAU)", "Binance public REST (PAXG/USDT candles)"],
+        "mt5_read_only": True,
+        "order_execution": False,
+    }
 
 
 @app.post("/api/v1/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["authentication"])
@@ -110,25 +129,49 @@ def me(user: User = Depends(get_current_user)):
 @app.get("/api/v1/dashboard", tags=["dashboard"])
 def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     risk = risk_for(db, user)
+    quote = market_service.spot_quote()
+    trend = market_service.trend("H1")
     return {
-        "account": {"connected": False, "mode": "DEMO", "balance": None, "currency": None},
+        "account": {"connected": False, "mode": None, "balance": None, "currency": None,
+                    "message": "Connect the MT5 desktop terminal for account balances."},
         "trading": {"enabled": False, "open_positions": 0, "today_profit": None},
-        "signal": {"symbol": "XAUUSD", "action": "NO TRADE", "confidence": None, "reason": "Market data provider is not configured."},
+        "market": {
+            "quote": quote,
+            "trend": trend,
+        },
+        "signal": {
+            "symbol": "XAU",
+            "action": trend["trend"],
+            "confidence": None,
+            "reason": trend["reason"],
+        },
         "risk": {"is_halted": risk.is_halted, "daily_loss_limit_pct": risk.daily_loss_limit_pct},
-        "data_mode": "unconfigured",
+        "data_mode": "live" if quote["available"] else "unavailable",
     }
 
 
-@app.get("/api/v1/market/signal", tags=["market"])
-def market_signal(user: User = Depends(get_current_user)):
-    return {
-        "symbol": "XAUUSD",
-        "action": "NO TRADE",
-        "confidence": None,
-        "timeframe": None,
-        "generated_at": None,
-        "reason": "No trusted market data or validated strategy is configured. No order will be generated.",
-    }
+@app.get("/api/v1/market/quote", tags=["market"])
+def market_quote(user: User = Depends(get_current_user)):
+    """Live spot gold price from gold-api.com. Real data only; fails honest."""
+    return market_service.spot_quote()
+
+
+@app.get("/api/v1/market/candles", tags=["market"])
+def market_candles(
+    timeframe: str = Query("H1", pattern="^(M15|H1|H4|D1)$"),
+    count: int = Query(100, ge=1, le=500),
+    user: User = Depends(get_current_user),
+):
+    """Live tokenized-gold (PAXG/USDT) OHLC candles from Binance public REST."""
+    if timeframe not in SUPPORTED_TIMEFRAMES:
+        raise HTTPException(status_code=422, detail="Unsupported timeframe")
+    return market_service.candles(timeframe, count)
+
+
+@app.get("/api/v1/market/trend", tags=["market"])
+def market_trend(user: User = Depends(get_current_user)):
+    """Rule-based EMA/RSI trend read computed from real live candles."""
+    return market_service.trend("H1")
 
 
 @app.get("/api/v1/trading/positions", tags=["trading"])
@@ -179,3 +222,23 @@ def audit_log(limit: int = 50, admin: User = Depends(require_admin), db: Session
         raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
     rows = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)).all()
     return {"items": [{"id": row.id, "user_id": row.user_id, "event_type": row.event_type, "detail": row.detail, "created_at": row.created_at.isoformat()} for row in rows]}
+
+
+# Single-origin hosting: when the web_app folder is available (Docker image,
+# repo checkout, self-hosted install), serve the PWA from the same origin as
+# the API so no CORS configuration is needed for the browser app.
+def _locate_static_dir() -> Path | None:
+    configured = Path(settings.static_dir)
+    # Also try relative to the repo layout (backend/app/main.py -> repo root),
+    # so the server works regardless of the process working directory.
+    beside_repo = Path(__file__).resolve().parent.parent.parent / "web_app"
+    inside_backend = Path(__file__).resolve().parent.parent / "web_app"
+    for candidate in (configured, beside_repo, inside_backend):
+        if candidate.is_dir() and (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+_static_dir = _locate_static_dir()
+if _static_dir is not None:
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="web_app")
