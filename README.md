@@ -590,6 +590,15 @@ Anyone can create an account once the backend is reachable over HTTPS:
 
 The backend serves the web app and the API from one origin; browsers, PWAs and the Android app all talk to the same URL. Users, passwords (Argon2id), risk limits and audit events are stored persistently (SQLite locally/PostgreSQL in production).
 
+**Create the first administrator** after registering your own account in the app:
+
+```bash
+cd backend && python make_admin.py you@your-domain.com   # promote
+python make_admin.py --list                              # see all accounts
+```
+
+On Render: run the same command from the service's Shell tab — `DATABASE_URL` is already set by the blueprint. Administrators see the Administration page and the audit log.
+
 ## 23. Live Market Data
 
 Prices and candles are real and fetched from free public providers, with no API keys:
