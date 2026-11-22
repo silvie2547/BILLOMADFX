@@ -17,6 +17,21 @@ services:
         fromDatabase:
           name: billomadfx
           property: connectionString
+      # Transactional email (sign-up codes, password resets, 2FA notices).
+      # Fill these in the Render dashboard after the first deploy; until then
+      # the app runs in "display mode" (codes shown in the app, not emailed).
+      - key: EMAIL_ENABLED
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
 
 databases:
   - name: billomadfx

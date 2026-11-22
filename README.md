@@ -365,6 +365,14 @@ Security requirements include:
 - Audit logging.
 - Session isolation.
 - Rate limiting.
+
+### 13.2 Email verification, password reset and two-step authentication (implemented)
+
+- **Sign-up verification with a 20-minute code:** creating an account sends a 6-digit one-time code to the email address. The code expires exactly 20 minutes after it is issued, is single-use, and the account cannot sign in until it is confirmed (the sign-in screen steers unverified users back to the code entry with a live 20-minute countdown and a resend button, capped at 3 codes per address per 20 minutes). Entering the code verifies the address and signs the user straight in.
+- **Password reset:** a "Forgot your password?" link starts a reset with the same kind of 20-minute single-use code. Setting a new password revokes every existing session (all devices) and re-verifies the email. The endpoint answers identically for unknown addresses, so it cannot be used to probe which emails have accounts.
+- **Two-step authentication (2FA):** standard TOTP — scan the QR code (Account page → Two-step authentication) with Google Authenticator, Authy or 1Password, confirm one 6-digit code, done. After that, sign-in requires the rotating code; 8 one-time backup codes are issued for emergencies, and disabling 2FA requires the account password, not just a valid session.
+- **One-time code hardening:** codes are stored hashed (Argon2id, never in plain text), invalidated when re-issued, stop accepting attempts after 5 wrong entries, and sending/verifying is rate-limited per address and per network.
+- **Email delivery:** configure SMTP on the deployment (`EMAIL_ENABLED=true`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` — all optional fields in the Render blueprint). Without SMTP the app runs in documented "display mode": the API returns the one-time code in the response and the app shows it with a clear "email delivery is not configured" notice, so self-hosted installs and local development remain fully usable.
 - Backup and recovery procedures.
 
 Sensitive trading credentials must not be committed to GitHub or included in source code.

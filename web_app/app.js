@@ -38,14 +38,45 @@ async function apiRequest(path, options={}) {
   let body = null;
   try { body = await response.json(); } catch (_) {}
   if (!response.ok) {
-    if (response.status === 401) {
+    // A rejected session token means the user must sign in again. Endpoints
+    // that legitimately answer 401 (wrong 2FA code, wrong disable password)
+    // pass allow401 and handle the error inline instead.
+    if (response.status === 401 && token && !options.allow401) {
       localStorage.removeItem(TOKEN_KEY);
       showAuth();
     }
     const detail = body?.detail;
-    throw new Error(Array.isArray(detail) ? detail.map(item => item.msg).join(', ') : detail || `Request failed (${response.status})`);
+    let message;
+    let code = null;
+    if (typeof detail === 'string') message = detail;
+    else if (Array.isArray(detail)) message = detail.map(item => item.msg).join(', ');
+    else if (detail && typeof detail === 'object') { message = detail.message || 'Request failed'; code = detail.code || null; }
+    else message = `Request failed (${response.status})`;
+    const error = new Error(message);
+    error.code = code;
+    error.status = response.status;
+    throw error;
   }
   return body;
+}
+
+const AUTH_VIEWS = ['login', 'register', 'otp', 'forgot', 'reset', 'twofa'];
+let pendingEmail = null;      // address awaiting sign-up verification
+let pendingChallenge = null;  // 2FA challenge token during sign-in
+let resetEmail = null;        // address awaiting password reset
+
+function showAuthView(name) {
+  if (!AUTH_VIEWS.includes(name)) return;
+  AUTH_VIEWS.forEach(view => {
+    const element = $(`#${view}Form`);
+    if (element) element.classList.toggle('active', view === name);
+  });
+  $('#authTabs')?.toggleAttribute('hidden', name !== 'login' && name !== 'register');
+  $$('.auth-tabs button').forEach(item => item.classList.toggle('active', item.dataset.authTab === (name === 'register' ? 'register' : 'login')));
+  if (name !== 'otp') {
+    window.clearInterval(window.otpCountdownTimer);
+    window.otpCountdownTimer = null;
+  }
 }
 
 function showAuth() {
@@ -55,8 +86,9 @@ function showAuth() {
   $('#authOverlay')?.classList.add('show');
   const adminNav = $('.nav-item[data-page="admin"]');
   if (adminNav) adminNav.hidden = true;
-  setAuthStatus('#loginStatus', null);
-  setAuthStatus('#registerStatus', null);
+  pendingChallenge = null;
+  AUTH_VIEWS.forEach(view => setAuthStatus(`#${view}Status`, null));
+  showAuthView('login');
 }
 
 function showApp(user) {
@@ -74,7 +106,98 @@ function showApp(user) {
   const initials = user.display_name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
   const avatar = $('.profile .avatar');
   if (avatar) avatar.textContent = initials;
+  renderTwoFactorPanel();
 }
+
+// --- Two-step authentication (Account page) ----------------------------------
+
+function renderTwoFactorPanel() {
+  const enabled = Boolean(currentUser?.two_factor_enabled);
+  const pill = $('#twofaStatusPill');
+  if (pill) {
+    pill.classList.toggle('positive', enabled);
+    pill.classList.toggle('unavailable', !enabled);
+  }
+  setText('#twofaStatusLine', enabled ? 'Enabled — sign-in needs your authenticator code' : 'Not enabled');
+  const toggle = (selector, show) => { const el = $(selector); if (el) el.hidden = !show; };
+  toggle('#twofaEnableBlock', !enabled);
+  toggle('#twofaDisableBlock', enabled);
+  // Reset any in-progress setup UI when the state changes.
+  toggle('#twofaSetupBlock', false);
+  toggle('#twofaBackupBlock', false);
+  setAuthStatus('#twofaSetupStatus', null);
+}
+
+async function handleTwoFactorStart() {
+  const button = $('#twofaStartButton');
+  button.disabled = true;
+  try {
+    const data = await apiRequest('/api/v1/auth/2fa/setup', { method: 'POST', body: '{}' });
+    $('#twofaQr').src = data.qr_data_uri;
+    $('#twofaSecret').textContent = `Manual setup key: ${data.secret}`;
+    $('#twofaCode').value = '';
+    $('#twofaSetupBlock').hidden = false;
+    $('#twofaSetupStatus').hidden = true;
+    $('#twofaCode').focus();
+  } catch (error) {
+    toast('Setup failed', error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleTwoFactorConfirm() {
+  const button = $('#twofaConfirmButton');
+  button.disabled = true;
+  setAuthStatus('#twofaSetupStatus', null);
+  try {
+    const data = await apiRequest('/api/v1/auth/2fa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ code: $('#twofaCode').value })
+    });
+    currentUser.two_factor_enabled = true;
+    $('#twofaSetupBlock').hidden = true;
+    const list = $('#twofaBackupCodes');
+    list.replaceChildren();
+    for (const code of data.backup_codes) {
+      const item = document.createElement('code');
+      item.textContent = code;
+      list.append(item);
+    }
+    $('#twofaBackupBlock').hidden = false;
+    renderTwoFactorPanel();
+    toast('Two-step authentication on', data.message);
+  } catch (error) {
+    setAuthStatus('#twofaSetupStatus', error.message, true);
+    toast('Not confirmed', error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleTwoFactorDisable() {
+  if (!window.confirm('Turn off two-step authentication? Sign-in will only need your email and password.')) return;
+  const password = window.prompt('Confirm your account password to disable two-step authentication:');
+  if (!password) return;
+  setAuthStatus('#twofaDisableStatus', null);
+  try {
+    const data = await apiRequest('/api/v1/auth/2fa/disable', {
+      method: 'POST',
+      allow401: true,
+      body: JSON.stringify({ password })
+    });
+    currentUser.two_factor_enabled = false;
+    renderTwoFactorPanel();
+    toast('Two-step authentication off', data.message);
+  } catch (error) {
+    setAuthStatus('#twofaDisableStatus', error.message, true);
+    toast('Still enabled', error.message, 'error');
+  }
+}
+
+$('#twofaStartButton')?.addEventListener('click', handleTwoFactorStart);
+$('#twofaConfirmButton')?.addEventListener('click', handleTwoFactorConfirm);
+$('#twofaDisableButton')?.addEventListener('click', handleTwoFactorDisable);
 
 function setAuthStatus(selector, message, isError = false) {
   const element = $(selector);
@@ -400,6 +523,63 @@ function applyMt5Status(status, account, mt5Positions, mt5Bars, marketCandles, m
   }
 }
 
+function startOtpCountdown(minutes) {
+  window.clearInterval(window.otpCountdownTimer);
+  const deadline = Date.now() + minutes * 60 * 1000;
+  const element = $('#otpCountdown');
+  const tick = () => {
+    const left = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+    if (!element) return;
+    if (left <= 0) {
+      element.textContent = 'The code has expired — request a new one below.';
+      window.clearInterval(window.otpCountdownTimer);
+      window.otpCountdownTimer = null;
+      return;
+    }
+    element.textContent = `Code expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  };
+  tick();
+  window.otpCountdownTimer = window.setInterval(tick, 1000);
+}
+
+function showDeliveredCode(codeElementId, delivery, otp) {
+  // Display mode: this deployment has no SMTP configured, so the API hands
+  // the code to the client. Clearly labeled so nobody mistakes it for an email.
+  const element = $(codeElementId);
+  if (!element) return;
+  if (delivery === 'display' && otp) {
+    element.hidden = false;
+    element.textContent = `Email delivery is not configured on this deployment — your one-time code is ${otp}`;
+  } else {
+    element.hidden = true;
+    element.textContent = '';
+  }
+}
+
+function enterOtpView(data) {
+  pendingEmail = data.email || pendingEmail;
+  $('#otpMessage').textContent = data.message || `We sent a verification code to ${pendingEmail}.`;
+  showDeliveredCode('#otpDisplay', data.delivery, data.otp);
+  $('#otpCode').value = data.delivery === 'display' && data.otp ? data.otp : '';
+  $('#otpCode').focus();
+  startOtpCountdown(data.expires_in_minutes || 20);
+  setAuthStatus('#otpStatus', null);
+  showAuthView('otp');
+}
+
+function enterResetView(email, data) {
+  resetEmail = email;
+  $('#resetMessage').textContent = data?.message || 'Enter the reset code and choose a new password.';
+  showDeliveredCode('#resetDisplay', data?.delivery, data?.otp);
+  $('#resetCode').value = data?.delivery === 'display' && data?.otp ? data.otp : '';
+  $('#resetPassword').value = '';
+  $('#resetPasswordConfirm').value = '';
+  updatePasswordChecklist('#resetRequirements', '#resetPassword');
+  setAuthStatus('#resetStatus', null);
+  showAuthView('reset');
+  $('#resetCode').focus();
+}
+
 async function handleLogin(event) {
   event.preventDefault();
   const submit = $('#loginSubmit');
@@ -410,11 +590,26 @@ async function handleLogin(event) {
       method: 'POST',
       body: JSON.stringify({ email: $('#loginEmail').value, password: $('#loginPassword').value })
     });
+    if (data.totp_required) {
+      // Two-step authentication: the password was accepted; ask for the code.
+      pendingChallenge = data.challenge_token;
+      $('#twofaEmail').textContent = $('#loginEmail').value;
+      setAuthStatus('#twofaStatus', null);
+      showAuthView('twofa');
+      $('#twofaCode').focus();
+      return;
+    }
     localStorage.setItem(TOKEN_KEY, data.access_token);
     showApp(data.user);
     const refreshed = await loadAuthenticatedData(data.user);
     if (refreshed) toast('Welcome back', `Signed in as ${data.user.display_name}`);
   } catch (error) {
+    if (error.code === 'email_not_verified') {
+      // Right password, unverified address: continue the sign-up verification.
+      setAuthStatus('#otpStatus', null);
+      enterOtpView({ email: $('#loginEmail').value, message: error.message });
+      return;
+    }
     setAuthStatus('#loginStatus', error.message, true);
     toast('Sign-in failed', error.message, 'error');
   } finally {
@@ -422,15 +617,15 @@ async function handleLogin(event) {
   }
 }
 
-function updatePasswordChecklist() {
-  const value = $('#registerPassword').value;
+function updatePasswordChecklist(listSelector, inputSelector) {
+  const value = $(inputSelector).value;
   const rules = {
     length: value.length >= 12,
     upper: /[A-Z]/.test(value),
     lower: /[a-z]/.test(value),
     digit: /\d/.test(value)
   };
-  $$('#passwordRequirements li').forEach(item => item.classList.toggle('ok', Boolean(rules[item.dataset.rule])));
+  $$(`${listSelector} li`).forEach(item => item.classList.toggle('ok', Boolean(rules[item.dataset.rule])));
 }
 
 async function handleRegister(event) {
@@ -454,10 +649,10 @@ async function handleRegister(event) {
         display_name: $('#registerName').value
       })
     });
-    localStorage.setItem(TOKEN_KEY, data.access_token);
-    showApp(data.user);
-    const refreshed = await loadAuthenticatedData(data.user);
-    if (refreshed) toast('Account created', `Welcome, ${data.user.display_name}`);
+    // A one-time code is now on its way; the account activates after it is
+    // confirmed (valid for 20 minutes).
+    enterOtpView(data);
+    toast('Almost there', 'Enter the verification code to activate your account.');
   } catch (error) {
     setAuthStatus('#registerStatus', error.message, true);
     toast('Registration failed', error.message, 'error');
@@ -466,9 +661,162 @@ async function handleRegister(event) {
   }
 }
 
+async function handleVerifyOtp(event) {
+  event.preventDefault();
+  const submit = $('#otpSubmit');
+  submit.disabled = true;
+  try {
+    const data = await apiRequest('/api/v1/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email: pendingEmail, code: $('#otpCode').value })
+    });
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    pendingEmail = null;
+    showApp(data.user);
+    const refreshed = await loadAuthenticatedData(data.user);
+    if (refreshed) toast('Email verified', `Welcome, ${data.user.display_name}`);
+  } catch (error) {
+    setAuthStatus('#otpStatus', error.message, true);
+    toast('Verification failed', error.message, 'error');
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+function startResendCooldown(seconds = 60) {
+  const button = $('#otpResend');
+  if (!button) return;
+  button.disabled = true;
+  window.clearInterval(window.resendCooldownTimer);
+  let remaining = seconds;
+  const tick = () => {
+    if (remaining <= 0) {
+      button.disabled = false;
+      button.textContent = 'Resend code';
+      window.clearInterval(window.resendCooldownTimer);
+      return;
+    }
+    button.textContent = `Resend available in ${remaining}s`;
+    remaining -= 1;
+  };
+  tick();
+  window.resendCooldownTimer = window.setInterval(tick, 1000);
+}
+
+async function handleResendOtp() {
+  if (!pendingEmail) return;
+  try {
+    const data = await apiRequest('/api/v1/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email: pendingEmail })
+    });
+    if (data.resent === false) {
+      setAuthStatus('#otpStatus', data.message, true);
+      startResendCooldown();
+      return;
+    }
+    enterOtpView(data);
+    startResendCooldown();
+    toast('Code re-sent', data.message);
+  } catch (error) {
+    setAuthStatus('#otpStatus', error.message, true);
+    startResendCooldown();
+    toast('Could not re-send', error.message, 'error');
+  }
+}
+
+async function handleForgotPassword(event) {
+  event.preventDefault();
+  const submit = $('#forgotSubmit');
+  submit.disabled = true;
+  setAuthStatus('#forgotStatus', null);
+  try {
+    const email = $('#forgotEmail').value;
+    const data = await apiRequest('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+    enterResetView(email, data);
+  } catch (error) {
+    setAuthStatus('#forgotStatus', error.message, true);
+    toast('Reset failed', error.message, 'error');
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function handleResetPassword(event) {
+  event.preventDefault();
+  const submit = $('#resetSubmit');
+  const password = $('#resetPassword').value;
+  setAuthStatus('#resetStatus', null);
+  if (password !== $('#resetPasswordConfirm').value) {
+    setAuthStatus('#resetStatus', 'Passwords do not match.', true);
+    return;
+  }
+  submit.disabled = true;
+  try {
+    const data = await apiRequest('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: resetEmail, code: $('#resetCode').value, new_password: password })
+    });
+    toast('Password updated', data.message);
+    showAuthView('login');
+    setAuthStatus('#loginStatus', 'Your password is updated — sign in with the new one.');
+    $('#loginEmail').value = resetEmail || '';
+    $('#loginPassword').value = '';
+    $('#loginPassword').focus();
+  } catch (error) {
+    setAuthStatus('#resetStatus', error.message, true);
+    toast('Reset failed', error.message, 'error');
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function handleTwoFactorChallenge(event) {
+  event.preventDefault();
+  const submit = $('#twofaSubmit');
+  submit.disabled = true;
+  setAuthStatus('#twofaStatus', null);
+  try {
+    const data = await apiRequest('/api/v1/auth/login/2fa', {
+      method: 'POST',
+      allow401: true,
+      body: JSON.stringify({ challenge_token: pendingChallenge, code: $('#twofaCode').value })
+    });
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    pendingChallenge = null;
+    showApp(data.user);
+    const refreshed = await loadAuthenticatedData(data.user);
+    if (refreshed) toast('Welcome back', `Signed in as ${data.user.display_name}`);
+  } catch (error) {
+    setAuthStatus('#twofaStatus', error.message, true);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
 $('#loginForm')?.addEventListener('submit', handleLogin);
 $('#registerForm')?.addEventListener('submit', handleRegister);
-$('#registerPassword')?.addEventListener('input', updatePasswordChecklist);
+$('#registerPassword')?.addEventListener('input', () => updatePasswordChecklist('#passwordRequirements', '#registerPassword'));
+$('#resetPassword')?.addEventListener('input', () => updatePasswordChecklist('#resetRequirements', '#resetPassword'));
+$('#otpForm')?.addEventListener('submit', handleVerifyOtp);
+$('#otpResend')?.addEventListener('click', handleResendOtp);
+$('#forgotForm')?.addEventListener('submit', handleForgotPassword);
+$('#resetForm')?.addEventListener('submit', handleResetPassword);
+$('#twofaForm')?.addEventListener('submit', handleTwoFactorChallenge);
+
+$$('[data-auth-view]').forEach(button => button.addEventListener('click', () => {
+  if (button.dataset.authView === 'forgot' && !$('#forgotEmail').value) {
+    $('#forgotEmail').value = $('#loginEmail').value || '';
+  }
+  if (button.dataset.authView === 'login') {
+    pendingChallenge = null;
+    pendingEmail = null;
+  }
+  showAuthView(button.dataset.authView);
+}));
 
 $('#riskSettingsForm')?.addEventListener('submit', async event => {
   event.preventDefault();

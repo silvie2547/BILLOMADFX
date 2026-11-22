@@ -17,6 +17,17 @@ LOGIN_LIMIT = 15
 LOGIN_WINDOW = 5 * 60
 REGISTER_LIMIT = 8
 REGISTER_WINDOW = 60 * 60
+# One-time codes: at most 3 sends per address per 20-minute code lifetime,
+# IP-level ceilings for sending and verifying, and a separate ceiling for
+# password-reset requests.
+OTP_SEND_EMAIL_LIMIT = 3
+OTP_SEND_EMAIL_WINDOW = 20 * 60
+OTP_SEND_IP_LIMIT = 10
+OTP_SEND_IP_WINDOW = 60 * 60
+OTP_VERIFY_IP_LIMIT = 20
+OTP_VERIFY_IP_WINDOW = 5 * 60
+FORGOT_IP_LIMIT = 5
+FORGOT_IP_WINDOW = 60 * 60
 
 
 class SlidingWindowLimiter:
@@ -84,6 +95,10 @@ class LoginThrottle:
 login_ip_limiter = SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW)
 register_ip_limiter = SlidingWindowLimiter(REGISTER_LIMIT, REGISTER_WINDOW)
 login_throttle = LoginThrottle()
+otp_send_email_limiter = SlidingWindowLimiter(OTP_SEND_EMAIL_LIMIT, OTP_SEND_EMAIL_WINDOW)
+otp_send_ip_limiter = SlidingWindowLimiter(OTP_SEND_IP_LIMIT, OTP_SEND_IP_WINDOW)
+otp_verify_ip_limiter = SlidingWindowLimiter(OTP_VERIFY_IP_LIMIT, OTP_VERIFY_IP_WINDOW)
+forgot_ip_limiter = SlidingWindowLimiter(FORGOT_IP_LIMIT, FORGOT_IP_WINDOW)
 
 
 def reset_all() -> None:
@@ -91,3 +106,7 @@ def reset_all() -> None:
     login_ip_limiter.reset()
     register_ip_limiter.reset()
     login_throttle.reset()
+    otp_send_email_limiter.reset()
+    otp_send_ip_limiter.reset()
+    otp_verify_ip_limiter.reset()
+    forgot_ip_limiter.reset()

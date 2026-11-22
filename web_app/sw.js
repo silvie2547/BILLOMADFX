@@ -1,6 +1,6 @@
 /* BILLOMADFX service worker: offline shell + fast loads.
    API calls are never cached — market data must always be live. */
-const CACHE_NAME = 'billomadfx-shell-v2';
+const CACHE_NAME = 'billomadfx-shell-v3';
 const SHELL_ASSETS = [
   './index.html',
   './config.js',

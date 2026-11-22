@@ -22,6 +22,21 @@ class Settings(BaseSettings):
     # Read the real client IP from X-Forwarded-For (set by Render, nginx, etc.).
     # Disable only when running directly exposed without a reverse proxy.
     trust_forwarded_for: bool = True
+    # One-time codes (sign-up verification, password reset). Codes stop
+    # working 20 minutes after they are issued (product requirement).
+    otp_ttl_minutes: int = 20
+    otp_length: int = 6
+    otp_max_attempts: int = 5
+    # Transactional email. When SMTP is configured (email_enabled=true plus a
+    # host), one-time codes are emailed to the user. Without SMTP the API
+    # returns the code in the HTTP response ("display mode") so self-hosted
+    # installs and local development stay usable — clearly labeled in the app.
+    email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "BILLOMADFX <no-reply@billomadfx.com>"
 
     @property
     def allowed_origins(self) -> list[str]:
