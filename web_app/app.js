@@ -74,6 +74,7 @@ function showApp(user) {
 async function loadAuthenticatedData() {
   try {
     const user = await apiRequest('/api/v1/auth/me');
+    showApp(user);
     const [dashboard, risk, signal, mt5Status, mt5Account, mt5Positions, mt5Bars, adminAudit] = await Promise.all([
       apiRequest('/api/v1/dashboard'),
       apiRequest('/api/v1/risk'),
@@ -86,7 +87,6 @@ async function loadAuthenticatedData() {
         ? apiRequest('/api/v1/admin/audit?limit=50').then(data => ({ data, error: null })).catch(error => ({ data: null, error }))
         : Promise.resolve({ data: null, error: null })
     ]);
-    showApp(user);
     applyDashboard(dashboard, risk, signal);
     applyMt5Status(mt5Status, mt5Account, mt5Positions, mt5Bars);
     applyAdminAudit(user, adminAudit);

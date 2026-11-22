@@ -1,0 +1,5 @@
+# Test and development tooling. Install on top of backend/requirements.txt:
+#   python -m pip install -r backend/requirements.txt -r requirements-dev.txt
+-r backend/requirements.txt
+pytest>=8,<10
+httpx>=0.27,<1.0

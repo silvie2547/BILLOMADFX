@@ -2,6 +2,12 @@
   display: none;
 }
 
+.sidebar-footer .text-button {
+  align-self: flex-start;
+  margin: 4px 9px 12px;
+  padding: 0;
+}
+
 .signal-ring {
   background: conic-gradient(var(--line) 0 100%);
 }

@@ -18,6 +18,15 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000/docs` for the interactive API docs. Health check: `GET /health`.
 
+## Run the tests
+
+From the repository root (requires Python 3.11+; `pytest.ini` puts `backend/` on the import path):
+
+```bash
+python -m pip install -r requirements-dev.txt
+pytest
+```
+
 ## Authentication
 
 Register with `POST /api/v1/auth/register` using JSON:

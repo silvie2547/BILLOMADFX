@@ -13,12 +13,9 @@ def test_status_fails_closed_without_meta_trader(monkeypatch):
     assert status.error is not None
 
 
-def test_bars_rejects_positions_without_demo(monkeypatch):
+def test_positions_fail_closed_without_meta_trader(monkeypatch):
+    """positions() must raise PermissionError when the MT5 package is unavailable."""
     service = Mt5ReadService()
-
-    class FakeMt5:
-        pass
-
-    monkeypatch.setattr(service, "_load", lambda: (None, "missing"))
-    with pytest.raises(PermissionError):
+    monkeypatch.setattr(service, "_load", lambda: (None, "MetaTrader5 Python package is not installed"))
+    with pytest.raises(PermissionError, match="MetaTrader5 Python package is not installed"):
         service.positions()

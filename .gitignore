@@ -1,4 +1,3 @@
-
 # Environment variables and secrets
 .env
 .env.*
@@ -34,6 +33,7 @@ desktop.ini
 
 # Model and dataset files
 ai_models/saved_models/
+data/
 data/private/
 *.pkl
 *.joblib

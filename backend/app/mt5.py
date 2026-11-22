@@ -77,18 +77,20 @@ class Mt5ReadService:
         if not initialized:
             raise PermissionError("MT5 terminal could not be initialized")
 
-        terminal = mt5.terminal_info()
-        account = mt5.account_info()
-        if terminal is None or account is None:
+        try:
+            terminal = mt5.terminal_info()
+            account = mt5.account_info()
+            if terminal is None or account is None:
+                raise PermissionError("MT5 terminal/account information unavailable")
+            if not terminal.connected:
+                raise PermissionError("MT5 terminal is disconnected")
+            if account.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
+                raise PermissionError("Only DEMO MT5 accounts may be accessed")
+            return mt5
+        except Exception:
+            # Never leave an initialized terminal session behind on a rejected session.
             mt5.shutdown()
-            raise PermissionError("MT5 terminal/account information unavailable")
-        if not terminal.connected:
-            mt5.shutdown()
-            raise PermissionError("MT5 terminal is disconnected")
-        if account.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-            mt5.shutdown()
-            raise PermissionError("Only DEMO MT5 accounts may be accessed")
-        return mt5
+            raise
 
     def account(self) -> dict[str, Any]:
         mt5 = self._require_demo_session()
