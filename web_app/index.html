@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="auth.css">
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell authenticated-hidden">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="#" aria-label="BILLOMADFX home">
         <div class="brand-mark">B</div>
@@ -129,7 +129,7 @@
     </main>
   </div>
 
-  <div class="auth-overlay" id="authOverlay" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <div class="auth-overlay show" id="authOverlay" role="dialog" aria-modal="true" aria-labelledby="authTitle">
     <div class="auth-card">
       <div class="auth-brand"><div class="brand-mark">B</div><div><strong>BILLOMAD<span>FX</span></strong><small>TRADE • ANALYSE • GROW</small></div></div>
       <div class="auth-tabs"><button class="active" data-auth-tab="login">Sign in</button><button data-auth-tab="register">Create account</button></div>
@@ -138,13 +138,22 @@
         <label>Email address<input id="loginEmail" type="email" autocomplete="email" required></label>
         <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
         <button class="gold-button" id="loginSubmit" type="submit">Sign in securely</button>
+        <p class="auth-status" id="loginStatus" hidden></p>
       </form>
       <form id="registerForm" class="auth-form">
         <h1>Create account</h1><p>Free account. Real live market data, strict risk controls.</p>
         <label>Display name<input id="registerName" type="text" maxlength="80" autocomplete="name" required></label>
         <label>Email address<input id="registerEmail" type="email" autocomplete="email" required></label>
-        <label>Password <small>Minimum 12 characters</small><input id="registerPassword" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+        <label>Password<input id="registerPassword" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+        <ul class="auth-requirements" id="passwordRequirements" aria-label="Password requirements">
+          <li data-rule="length">12+ characters</li>
+          <li data-rule="upper">Uppercase letter</li>
+          <li data-rule="lower">Lowercase letter</li>
+          <li data-rule="digit">Number</li>
+        </ul>
+        <label>Confirm password<input id="registerPasswordConfirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
         <button class="gold-button" id="registerSubmit" type="submit">Create account</button>
+        <p class="auth-status" id="registerStatus" hidden></p>
       </form>
       <div class="auth-safety">Real market data. This app never sends broker orders.</div>
     </div>

@@ -352,6 +352,16 @@ Security requirements include:
 - Secure database permissions.
 - Input validation.
 - API authorization.
+
+### 13.1 Authentication and session security (implemented)
+
+- **Auth-first flow:** the app opens on the Sign in / Create account screen. No dashboard content is rendered until the API confirms the session; a stored session is restored silently ("Restoring your session…").
+- **Password policy:** minimum 12 characters with uppercase, lowercase and a number; the password must not contain the email address. Hashed with Argon2id.
+- **Stay signed in:** tokens last 30 days and slide forward — when fewer than 5 days remain, the client silently exchanges them for a fresh token (`POST /api/v1/auth/refresh`). Regular use never re-asks for the password.
+- **Real logout:** signing out bumps the account's token version, instantly revoking every token issued before that moment, on all devices. Old or copied tokens stop working immediately (`401`).
+- **Brute-force protection:** an account locks for 15 minutes after 5 failed sign-ins; registration and sign-in are additionally rate-limited per network (8 registrations/hour, 15 sign-ins per 5 minutes). Unknown emails get identical Argon2 work so response timing cannot reveal which accounts exist.
+- **Hardened transport:** every response carries `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy`; HTML responses get a strict Content-Security-Policy (`default-src 'self'`, no inline script), API responses are `Cache-Control: no-store`, and production adds HSTS.
+- Login, registration, logout and emergency-halt events are written to the audit log (Administration page, admin role required).
 - Audit logging.
 - Session isolation.
 - Rate limiting.

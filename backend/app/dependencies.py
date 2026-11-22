@@ -22,11 +22,14 @@ def get_current_user(
     if credentials is None:
         raise unauthorized
     try:
-        user_id = decode_access_token(credentials.credentials)
+        user_id, token_version = decode_access_token(credentials.credentials)
     except InvalidTokenError:
         raise unauthorized
     user = db.get(User, user_id)
     if user is None or not user.is_active:
+        raise unauthorized
+    if user.token_version != token_version:
+        # The token predates a logout/password change: treat it as revoked.
         raise unauthorized
     return user
 

@@ -24,6 +24,24 @@ class RegisterRequest(BaseModel):
             raise ValueError("Display name cannot be blank")
         return value
 
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, value: str, info) -> str:
+        # Standard trading-platform policy: length plus upper/lower/digit.
+        problems = []
+        if not re.search(r"[A-Z]", value):
+            problems.append("an uppercase letter")
+        if not re.search(r"[a-z]", value):
+            problems.append("a lowercase letter")
+        if not re.search(r"\d", value):
+            problems.append("a number")
+        if problems:
+            raise ValueError(f"Password must contain {', '.join(problems)}")
+        local_part = str(info.data.get("email", "")).split("@")[0]
+        if local_part and local_part.lower() in value.lower():
+            raise ValueError("Password must not contain your email address")
+        return value
+
 
 class LoginRequest(BaseModel):
     email: str
@@ -44,6 +62,14 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: dict
+
+
+class AccessTokenResponse(BaseModel):
+    """Token-only response used by refresh (the client already knows who it is)."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
 
 
 class RiskResponse(BaseModel):

@@ -19,6 +19,9 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(80))
     role: Mapped[str] = mapped_column(String(16), default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Incremented on logout/password change: every JWT carries the version it
+    # was issued with, so bumping this value instantly revokes all older tokens.
+    token_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     risk_settings: Mapped["RiskSettings"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
 

@@ -55,6 +55,8 @@ function showAuth() {
   $('#authOverlay')?.classList.add('show');
   const adminNav = $('.nav-item[data-page="admin"]');
   if (adminNav) adminNav.hidden = true;
+  setAuthStatus('#loginStatus', null);
+  setAuthStatus('#registerStatus', null);
 }
 
 function showApp(user) {
@@ -74,9 +76,62 @@ function showApp(user) {
   if (avatar) avatar.textContent = initials;
 }
 
-async function loadAuthenticatedData() {
+function setAuthStatus(selector, message, isError = false) {
+  const element = $(selector);
+  if (!element) return;
+  element.hidden = message == null;
+  element.textContent = message ?? '';
+  element.classList.toggle('error', Boolean(isError));
+}
+
+// --- Session persistence -----------------------------------------------------
+// The access token lives 30 days. Whenever fewer than 5 days remain, the app
+// silently exchanges it for a fresh one (sliding session), so an account in
+// regular use never asks for the password again. Signing out revokes the
+// token on the server, not just in this browser.
+
+const TOKEN_RENEW_THRESHOLD_MS = 5 * 24 * 60 * 60 * 1000;
+let lastRenewCheck = 0;
+
+function tokenPayload() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
   try {
-    const user = await apiRequest('/api/v1/auth/me');
+    const json = atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(json);
+    return Number.isFinite(payload.exp) ? payload : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function maybeRenewToken() {
+  const payload = tokenPayload();
+  if (!payload) return;
+  const remaining = payload.exp * 1000 - Date.now();
+  if (remaining > TOKEN_RENEW_THRESHOLD_MS) return;
+  try {
+    const data = await apiRequest('/api/v1/auth/refresh', { method: 'POST', body: '{}' });
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+  } catch (_) { /* keep the current token; the next check retries */ }
+}
+
+function scheduleRenewalChecks() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !currentUser) return;
+    const now = Date.now();
+    if (now - lastRenewCheck < 5 * 60 * 1000) return;
+    lastRenewCheck = now;
+    void maybeRenewToken();
+  });
+  window.setInterval(() => {
+    if (currentUser) void maybeRenewToken();
+  }, 30 * 60 * 1000);
+}
+
+async function loadAuthenticatedData(knownUser = null) {
+  try {
+    const user = knownUser || await apiRequest('/api/v1/auth/me');
     showApp(user);
     const [dashboard, risk, mt5Status, mt5Account, mt5Positions, mt5Bars, marketCandles, adminAudit] = await Promise.all([
       apiRequest('/api/v1/dashboard'),
@@ -349,6 +404,7 @@ async function handleLogin(event) {
   event.preventDefault();
   const submit = $('#loginSubmit');
   submit.disabled = true;
+  setAuthStatus('#loginStatus', null);
   try {
     const data = await apiRequest('/api/v1/auth/login', {
       method: 'POST',
@@ -356,33 +412,54 @@ async function handleLogin(event) {
     });
     localStorage.setItem(TOKEN_KEY, data.access_token);
     showApp(data.user);
-    const refreshed = await loadAuthenticatedData();
+    const refreshed = await loadAuthenticatedData(data.user);
     if (refreshed) toast('Welcome back', `Signed in as ${data.user.display_name}`);
   } catch (error) {
+    setAuthStatus('#loginStatus', error.message, true);
     toast('Sign-in failed', error.message, 'error');
   } finally {
     submit.disabled = false;
   }
 }
 
+function updatePasswordChecklist() {
+  const value = $('#registerPassword').value;
+  const rules = {
+    length: value.length >= 12,
+    upper: /[A-Z]/.test(value),
+    lower: /[a-z]/.test(value),
+    digit: /\d/.test(value)
+  };
+  $$('#passwordRequirements li').forEach(item => item.classList.toggle('ok', Boolean(rules[item.dataset.rule])));
+}
+
 async function handleRegister(event) {
   event.preventDefault();
   const submit = $('#registerSubmit');
+  const password = $('#registerPassword').value;
+  setAuthStatus('#registerStatus', null);
+  if (password !== $('#registerPasswordConfirm').value) {
+    const message = 'Passwords do not match. Re-enter the same password in both fields.';
+    setAuthStatus('#registerStatus', message, true);
+    toast('Registration failed', message, 'error');
+    return;
+  }
   submit.disabled = true;
   try {
     const data = await apiRequest('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         email: $('#registerEmail').value,
-        password: $('#registerPassword').value,
+        password,
         display_name: $('#registerName').value
       })
     });
     localStorage.setItem(TOKEN_KEY, data.access_token);
     showApp(data.user);
-    const refreshed = await loadAuthenticatedData();
+    const refreshed = await loadAuthenticatedData(data.user);
     if (refreshed) toast('Account created', `Welcome, ${data.user.display_name}`);
   } catch (error) {
+    setAuthStatus('#registerStatus', error.message, true);
     toast('Registration failed', error.message, 'error');
   } finally {
     submit.disabled = false;
@@ -391,6 +468,7 @@ async function handleRegister(event) {
 
 $('#loginForm')?.addEventListener('submit', handleLogin);
 $('#registerForm')?.addEventListener('submit', handleRegister);
+$('#registerPassword')?.addEventListener('input', updatePasswordChecklist);
 
 $('#riskSettingsForm')?.addEventListener('submit', async event => {
   event.preventDefault();
@@ -423,11 +501,16 @@ $$('[data-auth-tab]').forEach(button => button.addEventListener('click', () => {
   $('#registerForm')?.classList.toggle('active', button.dataset.authTab === 'register');
 }));
 
-$('#logoutButton')?.addEventListener('click', () => {
+$('#logoutButton')?.addEventListener('click', async () => {
+  // Revoke the session on the server first (invalidates the token on every
+  // device), then always end the local session — even if the API is offline.
+  try {
+    await apiRequest('/api/v1/auth/logout', { method: 'POST', body: '{}' });
+  } catch (_) { /* network failure must not trap the user in the app */ }
   localStorage.removeItem(TOKEN_KEY);
   currentUser = null;
   showAuth();
-  toast('Signed out', 'Your session has ended');
+  toast('Signed out', 'Your session has ended on this device and on the server');
 });
 
 $('#themeButton')?.addEventListener('click', () => {
@@ -519,6 +602,13 @@ async function loadAppVersion() {
 window.addEventListener('load', () => {
   drawChart('1M');
   void loadAppVersion();
-  if (localStorage.getItem(TOKEN_KEY)) void loadAuthenticatedData();
-  else showAuth();
+  scheduleRenewalChecks();
+  // The auth screen is visible by default; restore the session only when a
+  // token is stored. Until /me answers, no app content is shown at all.
+  if (localStorage.getItem(TOKEN_KEY)) {
+    setAuthStatus('#loginStatus', 'Restoring your session…');
+    void loadAuthenticatedData()
+      .then(() => { if (currentUser) void maybeRenewToken(); })
+      .catch(error => setAuthStatus('#loginStatus', error.message, true));
+  }
 });

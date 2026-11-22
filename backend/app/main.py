@@ -2,20 +2,22 @@ from contextlib import asynccontextmanager
 from datetime import timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from . import ratelimit
 from .config import settings
 from .database import Base, engine, get_db
 from .dependencies import get_current_user, require_admin
 from .market import MarketDataService, SUPPORTED_TIMEFRAMES
 from .models import AuditEvent, RiskSettings, User
-from .schemas import HaltResponse, LoginRequest, RegisterRequest, RiskResponse, RiskUpdateRequest, TokenResponse
-from .security import create_access_token, hash_password, verify_password
+from .schemas import AccessTokenResponse, HaltResponse, LoginRequest, RegisterRequest, RiskResponse, RiskUpdateRequest, TokenResponse
+from .security import DUMMY_HASH, create_access_token, hash_password, verify_password
 from .mt5_routes import router as mt5_router
 
 APP_VERSION = settings.app_version
@@ -46,6 +48,52 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(mt5_router)
+
+
+def client_ip(request: Request) -> str:
+    """Best-effort client IP. Behind Render/nginx the socket address is the
+    proxy, so the first forwarded entry is used when enabled."""
+    if settings.trust_forwarded_for:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def too_many_requests(retry_after_seconds: int, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": message},
+        headers={"Retry-After": str(retry_after_seconds)},
+    )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    if request.url.path.startswith("/api/"):
+        # Authenticated API answers must never be cached anywhere.
+        response.headers.setdefault("Cache-Control", "no-store")
+    elif request.method == "GET" and (response.headers.get("content-type") or "").startswith("text/html"):
+        connect_src = " ".join(["'self'", *settings.csp_connect_srcs])
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self'; "
+            f"style-src 'self' https://fonts.googleapis.com; "
+            f"font-src 'self' https://fonts.gstatic.com; "
+            f"connect-src {connect_src}; "
+            "img-src 'self' data:; "
+            "manifest-src 'self'; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+        )
+        if settings.environment.lower() == "production":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 def audit(db: Session, user_id: int | None, event_type: str, detail: str = "") -> None:
@@ -94,7 +142,10 @@ def meta():
 
 
 @app.post("/api/v1/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["authentication"])
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    ip = client_ip(request)
+    if not ratelimit.register_ip_limiter.allow(ip):
+        return too_many_requests(ratelimit.REGISTER_WINDOW, "Too many accounts created from this network. Try again later.")
     user = User(email=payload.email, display_name=payload.display_name, password_hash=hash_password(payload.password), role="user")
     db.add(user)
     try:
@@ -106,24 +157,53 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=409, detail="An account with this email already exists")
     audit(db, user.id, "account.registered")
-    token, expires = create_access_token(user.id)
+    token, expires = create_access_token(user.id, user.token_version)
     return {"access_token": token, "expires_in": expires, "user": user_payload(user)}
 
 
 @app.post("/api/v1/auth/login", response_model=TokenResponse, tags=["authentication"])
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    ip = client_ip(request)
+    if not ratelimit.login_ip_limiter.allow(ip):
+        return too_many_requests(ratelimit.LOGIN_WINDOW, "Too many sign-in attempts from this network. Try again later.")
     email = payload.email.strip().lower()
+    if ratelimit.login_throttle.is_locked(email):
+        return too_many_requests(ratelimit.FAILED_LOGIN_WINDOW, "This account is temporarily locked after repeated failed sign-ins. Try again in 15 minutes.")
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        # Burn the same Argon2 work for unknown emails so response timing does
+        # not reveal which emails have accounts.
+        if user is None:
+            verify_password(payload.password, DUMMY_HASH)
+        ratelimit.login_throttle.record_failure(email)
         raise HTTPException(status_code=401, detail="Email or password is incorrect", headers={"WWW-Authenticate": "Bearer"})
+    ratelimit.login_throttle.clear(email)
     audit(db, user.id, "account.login")
-    token, expires = create_access_token(user.id)
+    token, expires = create_access_token(user.id, user.token_version)
     return {"access_token": token, "expires_in": expires, "user": user_payload(user)}
 
 
 @app.get("/api/v1/auth/me", tags=["authentication"])
 def me(user: User = Depends(get_current_user)):
     return user_payload(user)
+
+
+@app.post("/api/v1/auth/refresh", response_model=AccessTokenResponse, tags=["authentication"])
+def refresh(user: User = Depends(get_current_user)):
+    """Sliding sessions: a valid token is exchanged for a fresh one, so an
+    active user never hits the expiry while inactive users time out."""
+    token, expires = create_access_token(user.id, user.token_version)
+    return {"access_token": token, "expires_in": expires}
+
+
+@app.post("/api/v1/auth/logout", tags=["authentication"])
+def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Server-side revocation: bumping the token version invalidates every
+    # token issued before now, on every device.
+    user.token_version += 1
+    db.commit()
+    audit(db, user.id, "account.logout")
+    return {"logged_out": True}
 
 
 @app.get("/api/v1/dashboard", tags=["dashboard"])
